@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://b4rkn3ks3reo1"]
+
+[ext_resource type="Script" path="res://scripts/Game.gd" id="1_game1"]
+
+[node name="Game" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_game1")
