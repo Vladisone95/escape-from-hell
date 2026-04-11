@@ -28,11 +28,17 @@ var ui_back_btn:        Button
 var ui_upgrade_overlay: Control
 var ui_upgrade_title:   Label
 var ui_gameover_overlay: Control
-var ui_item_reward_overlay: Control
+var ui_chest_overlay: ChestOverlay
 var ui_inventory_overlay: InventoryOverlay
 
 var _log_lines: Array[String] = []
 var _advance_wave_on_next: bool = false
+
+# Speed control
+var ui_speed_label: Label
+const SPEED_STEPS: Array[float] = [1.0, 2.0, 5.0]
+var _speed_index: int = 0
+var _in_combat: bool = false
 
 # =====================================================================
 # LIFECYCLE
@@ -42,6 +48,9 @@ func _ready() -> void:
 	_build_ui()
 	_update_player_ui()
 	_show_inventory_screen()
+
+func _exit_tree() -> void:
+	Engine.time_scale = 1.0
 
 # =====================================================================
 # UI CONSTRUCTION  (entire UI is built in code — no child nodes needed)
@@ -204,16 +213,20 @@ func _build_ui() -> void:
 	ui_gameover_overlay.visible = false
 	add_child(ui_gameover_overlay)
 
-	# ── Item reward overlay (waves 3, 5, 7) ──────────────────────────
-	ui_item_reward_overlay = _build_item_reward_overlay()
-	ui_item_reward_overlay.visible = false
-	add_child(ui_item_reward_overlay)
+	# ── Chest overlay (waves 3, 5, 7) ────────────────────────────────
+	ui_chest_overlay = ChestOverlay.new()
+	ui_chest_overlay.visible = false
+	ui_chest_overlay.item_looted.connect(_on_chest_item_looted)
+	add_child(ui_chest_overlay)
 
 	# ── Inventory overlay (shown after reward choice) ────────────────
 	ui_inventory_overlay = InventoryOverlay.new()
 	ui_inventory_overlay.visible = false
 	ui_inventory_overlay.next_stage_pressed.connect(_on_inventory_next_stage)
 	add_child(ui_inventory_overlay)
+
+	# ── Speed control (bottom-right corner) ──────────────────────────
+	_build_speed_control()
 
 
 func _build_upgrade_overlay() -> Control:
@@ -305,136 +318,13 @@ func _build_gameover_overlay() -> Control:
 
 	return overlay
 
-func _build_item_reward_overlay() -> Control:
-	var overlay := ColorRect.new()
-	overlay.color = Color(0.0, 0.0, 0.0, 0.90)
-	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-
-	var vbox := VBoxContainer.new()
-	vbox.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	vbox.offset_left   = -320
-	vbox.offset_right  =  320
-	vbox.offset_top    = -200
-	vbox.offset_bottom =  200
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 18)
-	overlay.add_child(vbox)
-
-	var title := Label.new()
-	title.name = "RewardTitle"
-	title.add_theme_font_size_override("font_size", 28)
-	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(title)
-
-	var choose_lbl := Label.new()
-	choose_lbl.text = "Choose a reward:"
-	choose_lbl.add_theme_font_size_override("font_size", 20)
-	choose_lbl.add_theme_color_override("font_color", Color(0.88, 0.88, 0.88))
-	choose_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(choose_lbl)
-
-	# Item row
-	var item_row := HBoxContainer.new()
-	item_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	item_row.add_theme_constant_override("separation", 20)
-	item_row.name = "ItemRow"
-	vbox.add_child(item_row)
-
-	var btn_dagger := Button.new()
-	btn_dagger.name = "BtnDagger"
-	btn_dagger.text = "Dagger\n(+10 ATK, stackable)"
-	btn_dagger.custom_minimum_size = Vector2(210, 62)
-	btn_dagger.add_theme_font_size_override("font_size", 17)
-	btn_dagger.pressed.connect(func(): _apply_item_reward("dagger"))
-	item_row.add_child(btn_dagger)
-
-	var btn_slice := Button.new()
-	btn_slice.name = "BtnSlice"
-	btn_slice.text = "Slice and Dice\n(Attack twice/turn)"
-	btn_slice.custom_minimum_size = Vector2(210, 62)
-	btn_slice.add_theme_font_size_override("font_size", 17)
-	btn_slice.pressed.connect(func(): _apply_item_reward("slice_and_dice"))
-	item_row.add_child(btn_slice)
-
-	var btn_heart := Button.new()
-	btn_heart.name = "BtnHeart"
-	btn_heart.text = "Demon Heart\n(+3 Regen, stackable)"
-	btn_heart.custom_minimum_size = Vector2(210, 62)
-	btn_heart.add_theme_font_size_override("font_size", 17)
-	btn_heart.pressed.connect(func(): _apply_item_reward("demon_heart"))
-	item_row.add_child(btn_heart)
-
-	var btn_skin := Button.new()
-	btn_skin.name = "BtnSkin"
-	btn_skin.text = "Thick Skin\n(+25 Max HP, stackable)"
-	btn_skin.custom_minimum_size = Vector2(210, 62)
-	btn_skin.add_theme_font_size_override("font_size", 17)
-	btn_skin.pressed.connect(func(): _apply_item_reward("thick_skin"))
-	item_row.add_child(btn_skin)
-
-	# Divider
-	var sep := Label.new()
-	sep.text = "— or choose a stat upgrade —"
-	sep.add_theme_font_size_override("font_size", 16)
-	sep.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	sep.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(sep)
-
-	# Stat upgrades row
-	var stat_row := HBoxContainer.new()
-	stat_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	stat_row.add_theme_constant_override("separation", 20)
-	vbox.add_child(stat_row)
-
-	var btn_hp := Button.new()
-	btn_hp.text = "+ 30 Max Health"
-	btn_hp.custom_minimum_size = Vector2(210, 54)
-	btn_hp.add_theme_font_size_override("font_size", 18)
-	btn_hp.pressed.connect(func(): _apply_item_reward("health"))
-	stat_row.add_child(btn_hp)
-
-	var btn_atk := Button.new()
-	btn_atk.text = "+ 5 Attack"
-	btn_atk.custom_minimum_size = Vector2(210, 54)
-	btn_atk.add_theme_font_size_override("font_size", 18)
-	btn_atk.pressed.connect(func(): _apply_item_reward("attack"))
-	stat_row.add_child(btn_atk)
-
-	return overlay
-
-
-func _apply_item_reward(choice: String) -> void:
-	ui_item_reward_overlay.visible = false
-
-	match choice:
-		"dagger":
-			if GameData.player_inventory.add_item("dagger"):
-				_log("[center][color=orange]+ Dagger (+10 ATK)![/color][/center]")
-			else:
-				_log("[center][color=gray]Dagger stack is full![/color][/center]")
-		"slice_and_dice":
-			if GameData.player_inventory.add_item("slice_and_dice"):
-				_log("[center][color=orange]+ Slice and Dice![/color][/center]")
-			else:
-				_log("[center][color=gray]Already have Slice and Dice![/color][/center]")
-		"demon_heart":
-			if GameData.player_inventory.add_item("demon_heart"):
-				_log("[center][color=green]+ Demon Heart (+3 Regen)![/color][/center]")
-			else:
-				_log("[center][color=gray]Demon Heart stack is full![/color][/center]")
-		"thick_skin":
-			if GameData.player_inventory.add_item("thick_skin"):
-				_log("[center][color=green]+ Thick Skin (+25 Max HP)![/color][/center]")
-			else:
-				_log("[center][color=gray]Thick Skin stack is full![/color][/center]")
-		"health":
-			GameData.player_max_health += 30
-			_log("[center][color=green]+ 30 Max Health![/color][/center]")
-		"attack":
-			GameData.player_attack += 5
-			_log("[center][color=orange]+ 5 Attack![/color][/center]")
+func _on_chest_item_looted(item_id: String) -> void:
+	var def: Dictionary = Inventory.ITEMS.get(item_id, {})
+	if GameData.player_inventory.add_item(item_id):
+		var col := "orange" if item_id == "dagger" or item_id == "slice_and_dice" else "green"
+		_log("[center][color=%s]+ %s![/color][/center]" % [col, def.get("name", item_id)])
+	else:
+		_log("[center][color=gray]%s is full![/color][/center]" % def.get("name", item_id))
 
 	# Full heal then show inventory screen
 	GameData.player_health = GameData.effective_max_health()
@@ -452,6 +342,60 @@ func _on_inventory_next_stage() -> void:
 	if _advance_wave_on_next:
 		GameData.current_wave += 1
 	_show_pre_wave()
+
+
+func _build_speed_control() -> void:
+	var panel := PanelContainer.new()
+	panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	panel.offset_left = -180
+	panel.offset_top = -50
+	panel.offset_right = -10
+	panel.offset_bottom = -10
+	panel.z_index = 50
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.03, 0.05, 0.85)
+	sb.border_color = Color(0.45, 0.20, 0.08)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(4)
+	sb.set_content_margin_all(6)
+	panel.add_theme_stylebox_override("panel", sb)
+	add_child(panel)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 8)
+	panel.add_child(hbox)
+
+	var title := Label.new()
+	title.text = "Speed"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(0.75, 0.55, 0.25))
+	hbox.add_child(title)
+
+	var slider := HSlider.new()
+	slider.min_value = 0
+	slider.max_value = 2
+	slider.step = 1
+	slider.value = 0
+	slider.custom_minimum_size = Vector2(70, 0)
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slider.value_changed.connect(_on_speed_changed)
+	hbox.add_child(slider)
+
+	ui_speed_label = Label.new()
+	ui_speed_label.text = "1x"
+	ui_speed_label.add_theme_font_size_override("font_size", 15)
+	ui_speed_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	ui_speed_label.custom_minimum_size = Vector2(28, 0)
+	hbox.add_child(ui_speed_label)
+
+
+func _on_speed_changed(value: float) -> void:
+	_speed_index = int(value)
+	var speed: float = SPEED_STEPS[_speed_index]
+	ui_speed_label.text = "%dx" % int(speed)
+	# Only apply time_scale if combat is active
+	if _in_combat:
+		Engine.time_scale = speed
 
 
 # =====================================================================
@@ -545,6 +489,8 @@ func _on_start_wave_pressed() -> void:
 	ui_back_btn.visible   = false
 	ui_status_label.text  = "⚔  COMBAT"
 	MusicManager.play_track(MusicManager.Track.COMBAT)
+	_in_combat = true
+	Engine.time_scale = SPEED_STEPS[_speed_index]
 	_run_combat()
 
 
@@ -580,7 +526,7 @@ func _run_combat() -> void:
 		var atk_count := GameData.attacks_per_turn()
 		var eff_atk   := GameData.effective_attack()
 
-		for _strike in range(atk_count):
+		for strike_i in range(atk_count):
 			if _alive_enemies().is_empty():
 				break
 			if not is_inside_tree():
@@ -589,10 +535,17 @@ func _run_combat() -> void:
 			var alive := _alive_enemies()
 			var target: Dictionary = alive[randi() % alive.size()]
 
-			_log("[color=cyan]Hero strikes [b]%s[/b] for %d dmg.[/color]" % [target["name"], eff_atk])
+			var strike_label := ""
+			if atk_count > 1:
+				strike_label = " [color=yellow](%d/%d)[/color]" % [strike_i + 1, atk_count]
+			var actual_dmg: int = maxi(0, eff_atk - target["armor"])
+			if target["armor"] > 0 and actual_dmg < eff_atk:
+				_log("[color=cyan]Hero strikes [b]%s[/b] for %d dmg [color=gray](-%d armor)[/color]%s[/color]" % [target["name"], actual_dmg, eff_atk - actual_dmg, strike_label])
+			else:
+				_log("[color=cyan]Hero strikes [b]%s[/b] for %d dmg.%s[/color]" % [target["name"], actual_dmg, strike_label])
 			await ui_player_visual.play_attack()
 
-			target["health"] = max(0, target["health"] - eff_atk)
+			target["health"] = maxi(0, target["health"] - actual_dmg)
 			_update_enemy_ui(target)
 			await target["visual"].play_hurt()
 
@@ -666,6 +619,8 @@ func _run_combat() -> void:
 
 
 func _wave_complete() -> void:
+	_in_combat = false
+	Engine.time_scale = 1.0
 	_log("[center][color=yellow][b]Wave %d Complete![/b][/color][/center]" % GameData.current_wave)
 	MusicManager.play_track(MusicManager.Track.IDLE)
 	await get_tree().create_timer(0.9).timeout
@@ -679,38 +634,12 @@ func _wave_complete() -> void:
 	# Restore health
 	GameData.player_health = GameData.effective_max_health()
 
-	if GameData.is_item_reward_wave():
-		# Item reward waves (3, 5, 7): show items + stat upgrades
-		var title_node := ui_item_reward_overlay.find_child("RewardTitle") as Label
-		if title_node:
-			title_node.text = (
-				"Wave %d Complete!\n\nHP %d / %d  |  ATK %d  |  DEF %d"
-				% [GameData.current_wave, GameData.player_health, GameData.effective_max_health(), GameData.effective_attack(), GameData.player_armor]
-			)
-		# Disable buttons for items the player can't pick up
-		var btn_dagger := ui_item_reward_overlay.find_child("BtnDagger") as Button
-		var btn_slice := ui_item_reward_overlay.find_child("BtnSlice") as Button
-		var btn_heart := ui_item_reward_overlay.find_child("BtnHeart") as Button
-		var btn_skin := ui_item_reward_overlay.find_child("BtnSkin") as Button
-		if btn_dagger:
-			btn_dagger.disabled = GameData.player_inventory.get_stack("dagger") >= 5
-		if btn_slice:
-			btn_slice.disabled = GameData.player_inventory.has_item("slice_and_dice")
-		if btn_heart:
-			btn_heart.disabled = GameData.player_inventory.get_stack("demon_heart") >= 5
-		if btn_skin:
-			btn_skin.disabled = GameData.player_inventory.get_stack("thick_skin") >= 5
-		ui_item_reward_overlay.visible = true
-	else:
-		# Normal upgrade waves
-		ui_upgrade_title.text = (
-			"Wave %d Complete!\n\nHP %d / %d  |  ATK %d  |  DEF %d"
-			% [GameData.current_wave, GameData.player_health, GameData.effective_max_health(), GameData.effective_attack(), GameData.player_armor]
-		)
-		ui_upgrade_overlay.visible = true
+	ui_chest_overlay.show_chest()
 
 
 func _handle_defeat() -> void:
+	_in_combat = false
+	Engine.time_scale = 1.0
 	_log("[center][color=red][b]Hero has fallen...[/b][/color][/center]")
 	await ui_player_visual.play_die()
 	await get_tree().create_timer(1.0).timeout

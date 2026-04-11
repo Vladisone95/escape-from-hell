@@ -1,6 +1,30 @@
 class_name Inventory
 extends RefCounted
 
+# ── Rarity System ───────────────────────────────────────────────────────
+enum Rarity { COMMON, RARE, EPIC, MYTHICAL }
+
+const RARITY_WEIGHTS: Array[int] = [60, 25, 10, 5]
+const RARITY_NAMES: Array[String] = ["Common", "Rare", "Epic", "Mythical"]
+const RARITY_COLORS: Dictionary = {
+	Rarity.COMMON:   Color(0.65, 0.65, 0.70),
+	Rarity.RARE:     Color(0.30, 0.55, 1.0),
+	Rarity.EPIC:     Color(0.72, 0.30, 0.92),
+	Rarity.MYTHICAL: Color(1.0, 0.75, 0.10),
+}
+
+static func roll_rarity() -> Rarity:
+	var total := 0
+	for w: int in RARITY_WEIGHTS:
+		total += w
+	var roll := randi() % total
+	var cumulative := 0
+	for i in range(RARITY_WEIGHTS.size()):
+		cumulative += RARITY_WEIGHTS[i]
+		if roll < cumulative:
+			return i as Rarity
+	return Rarity.COMMON
+
 # ── Item Database ────────────────────────────────────────────────────────
 # Each item is a dictionary with: id, name, description, stackable, max_stack, icon_id
 # icon_id is used by ItemThumbnail to draw the correct icon
@@ -12,6 +36,7 @@ const ITEMS: Dictionary = {
 		"stackable":   true,
 		"max_stack":   5,
 		"icon_id":     "dagger",
+		"rarity":      Rarity.COMMON,
 	},
 	"slice_and_dice": {
 		"id":          "slice_and_dice",
@@ -20,6 +45,7 @@ const ITEMS: Dictionary = {
 		"stackable":   false,
 		"max_stack":   1,
 		"icon_id":     "slice_and_dice",
+		"rarity":      Rarity.MYTHICAL,
 	},
 	"demon_heart": {
 		"id":          "demon_heart",
@@ -28,6 +54,7 @@ const ITEMS: Dictionary = {
 		"stackable":   true,
 		"max_stack":   5,
 		"icon_id":     "demon_heart",
+		"rarity":      Rarity.COMMON,
 	},
 	"thick_skin": {
 		"id":          "thick_skin",
@@ -36,6 +63,7 @@ const ITEMS: Dictionary = {
 		"stackable":   true,
 		"max_stack":   5,
 		"icon_id":     "thick_skin",
+		"rarity":      Rarity.COMMON,
 	},
 }
 
