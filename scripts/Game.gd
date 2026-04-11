@@ -634,7 +634,11 @@ func _wave_complete() -> void:
 	# Restore health
 	GameData.player_health = GameData.effective_max_health()
 
-	ui_chest_overlay.show_chest()
+	if GameData.is_item_reward_wave():
+		ui_chest_overlay.show_chest()
+	else:
+		ui_upgrade_overlay.visible = true
+		ui_upgrade_title.text = "Wave %d Complete!" % GameData.current_wave
 
 
 func _handle_defeat() -> void:

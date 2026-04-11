@@ -10,6 +10,15 @@ var player_attack: int   = 10
 var player_armor: int    = 3
 var player_spikes: int   = 0
 var player_regen: int    = 1
+
+# Real-time arena stats
+var player_speed: float         = 200.0
+var player_dash_speed: float    = 500.0
+var player_dash_duration: float = 0.15
+var player_dash_cooldown: float = 0.8
+var player_attack_cooldown: float = 0.5
+var player_iframes: float       = 0.3
+
 const TOTAL_WAVES: int   = 10
 
 # Inventory
@@ -173,6 +182,12 @@ func reset() -> void:
 	player_spikes     = 0
 	player_regen      = 1
 	player_inventory  = Inventory.new()
+	player_speed         = 200.0
+	player_dash_speed    = 500.0
+	player_dash_duration = 0.15
+	player_dash_cooldown = 0.8
+	player_attack_cooldown = 0.5
+	player_iframes       = 0.3
 
 func is_item_reward_wave() -> bool:
 	return current_wave in ITEM_REWARD_WAVES

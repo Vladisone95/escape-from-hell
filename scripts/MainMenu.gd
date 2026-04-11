@@ -60,7 +60,7 @@ func _build_ui() -> void:
 	start_btn.text = "START GAME"
 	start_btn.custom_minimum_size = Vector2(280, 62)
 	start_btn.add_theme_font_size_override("font_size", 28)
-	start_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Game.tscn"))
+	start_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Arena.tscn"))
 	vbox.add_child(start_btn)
 
 	# Settings button
