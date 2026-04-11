@@ -374,8 +374,13 @@ func _wave_complete() -> void:
 		get_tree().change_scene_to_file("res://scenes/WinScreen.tscn")
 		return
 
-	# Full heal
-	GameData.player_health = GameData.effective_max_health()
+	# Regen at end of wave (health carries over between waves)
+	var regen := GameData.effective_regen()
+	if regen > 0 and GameData.player_health < GameData.effective_max_health():
+		var healed := mini(regen, GameData.effective_max_health() - GameData.player_health)
+		GameData.player_health += healed
+		_hud.update_hp(GameData.player_health, GameData.effective_max_health())
+		_hud.log_msg("[color=green]+%d HP (regen)[/color]" % healed)
 
 	if GameData.is_item_reward_wave():
 		_chest_overlay.show_chest()
@@ -389,7 +394,6 @@ func _apply_upgrade(kind: String) -> void:
 		GameData.player_max_health += 30
 	else:
 		GameData.player_attack += 5
-	GameData.player_health = GameData.effective_max_health()
 	_show_inventory_screen(true)
 
 func _on_chest_item_looted(item_id: String) -> void:
@@ -398,7 +402,6 @@ func _on_chest_item_looted(item_id: String) -> void:
 		_hud.log_msg("[center][color=orange]+ %s![/color][/center]" % def.get("name", item_id))
 	else:
 		_hud.log_msg("[center][color=gray]%s is full![/color][/center]" % def.get("name", item_id))
-	GameData.player_health = GameData.effective_max_health()
 	_show_inventory_screen(true)
 
 func _on_player_died() -> void:

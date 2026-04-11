@@ -326,8 +326,6 @@ func _on_chest_item_looted(item_id: String) -> void:
 	else:
 		_log("[center][color=gray]%s is full![/color][/center]" % def.get("name", item_id))
 
-	# Full heal then show inventory screen
-	GameData.player_health = GameData.effective_max_health()
 	_show_inventory_screen(true)
 
 
@@ -508,8 +506,6 @@ func _apply_upgrade(kind: String) -> void:
 		GameData.player_attack += 5
 		_log("[center][color=orange]+ 5 Attack![/color][/center]")
 
-	# Full heal then show inventory screen
-	GameData.player_health = GameData.effective_max_health()
 	_show_inventory_screen(true)
 
 # =====================================================================
@@ -556,14 +552,6 @@ func _run_combat() -> void:
 
 		if _alive_enemies().is_empty():
 			break
-
-		# ── Regen after player's turn ────────────────────────────────
-		var regen := GameData.effective_regen()
-		if regen > 0 and GameData.player_health < GameData.effective_max_health():
-			var healed := mini(regen, GameData.effective_max_health() - GameData.player_health)
-			GameData.player_health += healed
-			_update_player_ui()
-			_log("[color=green]+%d HP (regen)[/color]" % healed)
 
 		await get_tree().create_timer(0.38).timeout
 		if not is_inside_tree():
@@ -631,8 +619,13 @@ func _wave_complete() -> void:
 		get_tree().change_scene_to_file("res://scenes/WinScreen.tscn")
 		return
 
-	# Restore health
-	GameData.player_health = GameData.effective_max_health()
+	# Regen at end of wave (health carries over between waves)
+	var regen := GameData.effective_regen()
+	if regen > 0 and GameData.player_health < GameData.effective_max_health():
+		var healed := mini(regen, GameData.effective_max_health() - GameData.player_health)
+		GameData.player_health += healed
+		_update_player_ui()
+		_log("[color=green]+%d HP (regen)[/color]" % healed)
 
 	if GameData.is_item_reward_wave():
 		ui_chest_overlay.show_chest()

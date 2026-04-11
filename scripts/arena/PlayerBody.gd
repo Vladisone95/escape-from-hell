@@ -14,7 +14,6 @@ var _is_dashing: bool = false
 var _dash_dir: Vector2 = Vector2.DOWN
 var _knockback_vel: Vector2 = Vector2.ZERO
 var _facing_dir: Vector2 = Vector2.DOWN
-var _regen_timer: float = 0.0
 var _is_dead: bool = false
 
 func _ready() -> void:
@@ -61,17 +60,6 @@ func _physics_process(delta: float) -> void:
 	# Timers
 	_attack_cooldown -= delta
 	_dash_cooldown -= delta
-	_regen_timer += delta
-
-	# Regen every 5s
-	if _regen_timer >= 5.0:
-		_regen_timer -= 5.0
-		var regen := GameData.effective_regen()
-		var max_hp := GameData.effective_max_health()
-		if regen > 0 and GameData.player_health < max_hp:
-			GameData.player_health = mini(GameData.player_health + regen, max_hp)
-			health_bar.update_health(GameData.player_health, max_hp)
-			health_changed.emit(GameData.player_health, max_hp)
 
 	# Dash timer
 	if _is_dashing:
@@ -153,6 +141,29 @@ func _do_attack() -> void:
 	get_parent().add_child(hitbox)
 	hitbox.global_position = global_position + _facing_dir * 20.0
 
+	# Attack arc visual — white semi-transparent fan showing attack range
+	var arc_vis := Node2D.new()
+	arc_vis.z_index = -1
+	get_parent().add_child(arc_vis)
+	arc_vis.global_position = global_position
+	var _angle_base_vis := _facing_dir.angle()
+	var _arc_spread_vis := deg_to_rad(60.0)
+	var _arc_radius_vis := 50.0
+	arc_vis.draw.connect(func():
+		var pts := PackedVector2Array()
+		pts.append(Vector2.ZERO)
+		for i in 13:
+			var t := float(i) / 12.0
+			var a := _angle_base_vis - _arc_spread_vis + t * _arc_spread_vis * 2.0
+			pts.append(Vector2(cos(a), sin(a)) * _arc_radius_vis)
+		arc_vis.draw_polygon(pts, PackedColorArray([Color(1, 1, 1, 0.35)]))
+	)
+	arc_vis.queue_redraw()
+	get_tree().create_timer(0.15).timeout.connect(func():
+		if is_instance_valid(arc_vis):
+			arc_vis.queue_free()
+	)
+
 	# Connect to detect hurtboxes
 	var hit_targets: Array[Node] = []
 	hitbox.area_entered.connect(func(area: Area2D):
@@ -224,7 +235,6 @@ func reset_for_wave() -> void:
 	_is_dead = false
 	_attack_cooldown = 0.0
 	_dash_cooldown = 0.0
-	_regen_timer = 0.0
 	sprite.visible = true
 	sprite.modulate = Color.WHITE
 	health_bar.update_health(GameData.player_health, GameData.effective_max_health())
