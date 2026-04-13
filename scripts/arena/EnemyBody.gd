@@ -2,6 +2,7 @@ extends CharacterBody2D
 
 signal enemy_died(enemy: CharacterBody2D)
 signal health_changed(current: int, mx: int)
+signal boss_segment_lost(order_index: int)
 
 enum State { IDLE, CHASE, ATTACK, COOLDOWN, DEAD }
 
@@ -47,6 +48,7 @@ var _channel_target: Vector2 = Vector2.ZERO
 
 # Boss attack pattern cycling
 var _boss_attack_pattern: int = 0
+var _boss_segments_lost: int = 0
 
 func init(et: int, player: CharacterBody2D) -> void:
 	etype = et
@@ -239,16 +241,14 @@ func _process_attack(_delta: float) -> void:
 					var to_p := (player_ref.global_position - global_position).normalized()
 					var base_angle := to_p.angle()
 					for i in range(8):
-						var a := base_angle + deg_to_rad(-28.0 + 8.0 * i)
+						var a := base_angle + deg_to_rad(-36.0 + 9.0 * i)
 						var dir := Vector2(cos(a), sin(a))
-						var spawn_pos := global_position + dir * 240.0
-						Proj.fire(get_parent(), spawn_pos, spawn_pos + dir * 800.0, attack_damage, projectile_config)
-				1:  # Makeup explosion: 16 projectiles in ring
-					for i in range(16):
-						var angle := (TAU / 16.0) * i
+						Proj.fire(get_parent(), global_position, global_position + dir * 800.0, attack_damage, projectile_config)
+				1:  # Makeup explosion: 12 projectiles in ring
+					for i in range(12):
+						var angle := (TAU / 12.0) * i
 						var dir := Vector2(cos(angle), sin(angle))
-						var spawn_pos := global_position + dir * 240.0
-						Proj.fire(get_parent(), spawn_pos, spawn_pos + dir * 800.0, attack_damage, projectile_config)
+						Proj.fire(get_parent(), global_position, global_position + dir * 800.0, attack_damage, projectile_config)
 				2:  # Comb swipe: 3 lines of 5 toward player
 					var to_p := (player_ref.global_position - global_position).normalized()
 					var base_angle := to_p.angle()
@@ -256,7 +256,7 @@ func _process_attack(_delta: float) -> void:
 						var offset_angle := base_angle + deg_to_rad(-15.0 + 15.0 * j)
 						var dir := Vector2(cos(offset_angle), sin(offset_angle))
 						for k in range(5):
-							var spawn_pos := global_position + dir * (240.0 + 50.0 * k)
+							var spawn_pos := global_position + dir * (50.0 * k)
 							Proj.fire(get_parent(), spawn_pos, spawn_pos + dir * 800.0, attack_damage, projectile_config)
 			_change_state(State.COOLDOWN)
 		elif etype == 4:  # ABOMINATION — 12 projectiles from outer edge
@@ -357,6 +357,15 @@ func _take_damage(amount: int, knockback_dir: Vector2) -> void:
 	health_bar_node.update_health(health, max_health)
 	health_changed.emit(health, max_health)
 	sprite.play_hurt()
+
+	# Boss HP segment check — destroy arm + meteor per 10% lost
+	if etype == 5 and health > 0:
+		var segment_size: float = float(max_health) / 10.0
+		var new_segments_lost: int = clampi(int(ceil(float(max_health - health) / segment_size)), 0, 10)
+		while _boss_segments_lost < new_segments_lost:
+			sprite.destroy_arm(_boss_segments_lost)
+			boss_segment_lost.emit(_boss_segments_lost)
+			_boss_segments_lost += 1
 
 	# Damage number
 	var DmgNum := load("res://scripts/arena/DamageNumber.gd")

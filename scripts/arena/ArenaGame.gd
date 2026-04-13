@@ -5,10 +5,17 @@ enum GameState { PRE_WAVE, COMBAT, WAVE_COMPLETE, GAME_OVER, WIN }
 const ENEMY_TYPE_NAMES := ["Demon", "Imp", "Hellhound", "Warlock"]
 const ARENA_BASE_SIZE := Vector2(1000, 700)
 const ARENA_GROW_PER_WAVE := Vector2(60, 40)
-const MIN_OBSTACLE_COUNT := 2
-const MAX_OBSTACLE_COUNT := 4
+const MIN_OBSTACLE_COUNT := 3
+const MAX_OBSTACLE_COUNT := 5
+const OBSTACLE_TYPES: Array[Dictionary] = [
+	{"name": "boulder", "radius": 44.0},
+	{"name": "pillar", "radius": 20.0},
+	{"name": "bone_pile", "radius": 32.0},
+	{"name": "skull_pile", "radius": 28.0},
+]
 
 var _state: int = GameState.PRE_WAVE
+var _current_grid: RoomGrid
 var _player: CharacterBody2D
 var _camera: Camera2D
 var _hud: Control
@@ -25,7 +32,7 @@ var _mirror_charge_timer: float = 0.0
 var _mirror_charge_interval: float = 20.0  # seconds between mirror attacks
 var _mirror_charging_idx: int = -1  # which mirror is charging (-1 = none)
 var _mirror_charge_progress: float = 0.0
-const MIRROR_CHARGE_DURATION := 2.0  # how long the mirror glows before releasing
+const MIRROR_CHARGE_DURATION := 4.0  # how long the mirror glows before releasing
 
 # Overlays
 var _gameover_overlay: Control
@@ -102,67 +109,114 @@ func _generate_arena(wave: int) -> void:
 		c.queue_free()
 
 	# Check for boss wave — enlarge arena
-	var _is_boss_wave: bool = EnemyStats.get_encounter(wave) == EnemyStats.Encounter.BOSS
-	if _is_boss_wave:
+	var is_boss: bool = EnemyStats.get_encounter(wave) == EnemyStats.Encounter.BOSS
+	if is_boss:
 		_arena_size = ARENA_BASE_SIZE * 2
 	else:
 		_arena_size = ARENA_BASE_SIZE + ARENA_GROW_PER_WAVE * (wave - 1)
-	var hw := _arena_size.x * 0.5
-	var hh := _arena_size.y * 0.5
-	var wall_thickness := 60.0
 
-	# Floor
-	var floor_node := Node2D.new()
+	# Generate room grid
+	var seed_val: int = wave * 73856093 + 12345
+	_current_grid = RoomGrid.new()
+	_current_grid.generate(_arena_size, seed_val, is_boss)
+
+	# Lava layer (bottom — drawn behind everything)
+	var lava_node: Node2D = Node2D.new()
+	lava_node.set_script(load("res://scripts/arena/LavaLayer.gd"))
+	_arena_container.add_child(lava_node)
+	lava_node.init(_current_grid)
+
+	# Floor (on top of lava)
+	var floor_node: Node2D = Node2D.new()
 	floor_node.set_script(load("res://scripts/arena/ArenaFloor.gd"))
-	floor_node.set_meta("arena_size", _arena_size)
 	_arena_container.add_child(floor_node)
+	floor_node.init(_current_grid)
 
-	# Walls (4 StaticBody2D)
-	_add_wall(Vector2(0, -hh - wall_thickness * 0.5), Vector2(_arena_size.x + wall_thickness * 2, wall_thickness))  # top
-	_add_wall(Vector2(0, hh + wall_thickness * 0.5), Vector2(_arena_size.x + wall_thickness * 2, wall_thickness))   # bottom
-	_add_wall(Vector2(-hw - wall_thickness * 0.5, 0), Vector2(wall_thickness, _arena_size.y))  # left
-	_add_wall(Vector2(hw + wall_thickness * 0.5, 0), Vector2(wall_thickness, _arena_size.y))   # right
+	# Decorations
+	var decor_node: Node2D = Node2D.new()
+	decor_node.set_script(load("res://scripts/arena/ArenaDecorations.gd"))
+	_arena_container.add_child(decor_node)
+	decor_node.init(_current_grid, seed_val)
 
-	# Random obstacles (skip for boss waves — boss fills center)
-	if _is_boss_wave:
+	# Lava particles
+	var particles_node: Node2D = Node2D.new()
+	particles_node.set_script(load("res://scripts/arena/LavaParticles.gd"))
+	_arena_container.add_child(particles_node)
+	particles_node.init(_current_grid, seed_val)
+
+	# Collision walls from grid boundaries
+	_generate_grid_collisions()
+
+	# Random obstacles (skip for boss waves)
+	if is_boss:
 		return
-	var obstacle_count := randi_range(MIN_OBSTACLE_COUNT, MAX_OBSTACLE_COUNT)
-	for i in obstacle_count:
-		var pos := Vector2(
-			randf_range(-hw * 0.7, hw * 0.7),
-			randf_range(-hh * 0.7, hh * 0.7)
-		)
-		# Don't place too close to center (player spawn)
-		if pos.length() < 160.0:
-			pos = pos.normalized() * 160.0
-		_add_obstacle(pos)
+	_generate_obstacles(seed_val)
 
-func _add_wall(pos: Vector2, sz: Vector2) -> void:
-	var wall := StaticBody2D.new()
-	wall.position = pos
-	wall.collision_layer = 1 << 0  # layer 1: world
-	wall.collision_mask = 0
-	var col := CollisionShape2D.new()
-	var rect := RectangleShape2D.new()
-	rect.size = sz
-	col.shape = rect
-	wall.add_child(col)
-	_arena_container.add_child(wall)
+func _generate_grid_collisions() -> void:
+	var boundary_cells: Array[Vector2i] = _current_grid.get_lava_boundary_cells()
+	var ts: float = RoomGrid.CELL_SIZE
+	for cell: Vector2i in boundary_cells:
+		var world_pos: Vector2 = _current_grid.grid_to_world(cell.x, cell.y)
+		var wall: StaticBody2D = StaticBody2D.new()
+		wall.position = world_pos
+		wall.collision_layer = 1 << 0
+		wall.collision_mask = 0
+		var col: CollisionShape2D = CollisionShape2D.new()
+		var rect: RectangleShape2D = RectangleShape2D.new()
+		rect.size = Vector2(ts, ts)
+		col.shape = rect
+		wall.add_child(col)
+		_arena_container.add_child(wall)
 
-func _add_obstacle(pos: Vector2) -> void:
-	var obs := StaticBody2D.new()
+func _generate_obstacles(seed_val: int) -> void:
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.seed = seed_val + 7777
+	var floor_cells: Array[Vector2i] = _current_grid.get_floor_positions()
+	var center_x: int = _current_grid.width / 2
+	var center_y: int = _current_grid.height / 2
+	var obstacle_count: int = rng.randi_range(MIN_OBSTACLE_COUNT, MAX_OBSTACLE_COUNT)
+	var placed: Array[Vector2] = []
+
+	for i: int in obstacle_count:
+		# Try to find a valid placement
+		for attempt: int in 20:
+			var cell: Vector2i = floor_cells[rng.randi_range(0, floor_cells.size() - 1)]
+			# Not too close to center
+			if absi(cell.x - center_x) < 5 and absi(cell.y - center_y) < 5:
+				continue
+			# Must be on interior floor (not edge)
+			if not _current_grid.is_floor(cell.x - 1, cell.y) or not _current_grid.is_floor(cell.x + 1, cell.y):
+				continue
+			if not _current_grid.is_floor(cell.x, cell.y - 1) or not _current_grid.is_floor(cell.x, cell.y + 1):
+				continue
+			var pos: Vector2 = _current_grid.grid_to_world(cell.x, cell.y)
+			# Not too close to other obstacles
+			var too_close: bool = false
+			for p: Vector2 in placed:
+				if pos.distance_to(p) < 100.0:
+					too_close = true
+					break
+			if too_close:
+				continue
+			var otype: Dictionary = OBSTACLE_TYPES[rng.randi_range(0, OBSTACLE_TYPES.size() - 1)]
+			_add_obstacle(pos, otype["name"], otype["radius"])
+			placed.append(pos)
+			break
+
+func _add_obstacle(pos: Vector2, type_name: String, radius: float) -> void:
+	var obs: StaticBody2D = StaticBody2D.new()
 	obs.position = pos
-	obs.collision_layer = 1 << 0  # world
+	obs.collision_layer = 1 << 0
 	obs.collision_mask = 0
-	var col := CollisionShape2D.new()
-	var shape := CircleShape2D.new()
-	shape.radius = 44.0
+	var col: CollisionShape2D = CollisionShape2D.new()
+	var shape: CircleShape2D = CircleShape2D.new()
+	shape.radius = radius
 	col.shape = shape
 	obs.add_child(col)
 
-	# Visual
-	var vis := Node2D.new()
+	var vis: Node2D = Node2D.new()
 	vis.set_script(load("res://scripts/arena/ObstacleVisual.gd"))
+	vis.obstacle_type = type_name
 	obs.add_child(vis)
 
 	_arena_container.add_child(obs)
@@ -174,10 +228,10 @@ func _spawn_mirrors() -> void:
 	var hw := _arena_size.x * 0.5
 	var mirror_a := Node2D.new()
 	mirror_a.set_script(load("res://scripts/arena/TeleportMirror.gd"))
-	mirror_a.position = Vector2(-hw * 0.55, 0)
+	mirror_a.position = Vector2(-hw * 0.55, _arena_size.y * 0.2)
 	var mirror_b := Node2D.new()
 	mirror_b.set_script(load("res://scripts/arena/TeleportMirror.gd"))
-	mirror_b.position = Vector2(hw * 0.55, 0)
+	mirror_b.position = Vector2(hw * 0.55, _arena_size.y * 0.2)
 	var pair_color := Color(0.9, 0.15, 0.1)  # red glow for boss mirrors
 	_arena_container.add_child(mirror_a)
 	_arena_container.add_child(mirror_b)
@@ -217,8 +271,8 @@ func _setup_camera() -> void:
 	_update_camera_limits()
 
 func _update_camera_limits() -> void:
-	var hw := _arena_size.x * 0.5 + 60
-	var hh := _arena_size.y * 0.5 + 60
+	var hw: float = _arena_size.x * 0.5 + 96
+	var hh: float = _arena_size.y * 0.5 + 96
 	_camera.limit_left = int(-hw)
 	_camera.limit_right = int(hw)
 	_camera.limit_top = int(-hh)
@@ -376,8 +430,11 @@ func _spawn_wave_enemies() -> void:
 	_boss_enemy = null
 	var wave_def: Array = EnemyStats.get_wave_def(GameData.current_wave)
 	var is_boss_encounter: bool = EnemyStats.get_encounter(GameData.current_wave) == EnemyStats.Encounter.BOSS
-	var hw := _arena_size.x * 0.5 - 100
-	var hh := _arena_size.y * 0.5 - 100
+	var edge_floors: Array[Vector2i] = []
+	if _current_grid != null:
+		edge_floors = _current_grid.get_edge_floor_positions(3)
+	var hw: float = _arena_size.x * 0.5 - 100
+	var hh: float = _arena_size.y * 0.5 - 100
 
 	for group in wave_def:
 		var et: int = EnemyStats.type_id(group["type"])
@@ -385,20 +442,22 @@ func _spawn_wave_enemies() -> void:
 		var stats: Dictionary = EnemyStats.BASE.get(group["type"], {})
 		var is_boss: bool = stats.get("is_boss", false)
 		for i in count:
-			var enemy := CharacterBody2D.new()
+			var enemy: CharacterBody2D = CharacterBody2D.new()
 			enemy.set_script(load("res://scripts/arena/EnemyBody.gd"))
 
-			var pos := Vector2.ZERO
+			var pos: Vector2 = Vector2.ZERO
 			if is_boss:
-				pos = Vector2.ZERO  # boss spawns at center
+				pos = Vector2.ZERO
+			elif edge_floors.size() > 0:
+				var cell: Vector2i = edge_floors[randi() % edge_floors.size()]
+				pos = _current_grid.grid_to_world(cell.x, cell.y)
 			else:
-				# Spawn at random edge
-				var edge := randi() % 4
+				var edge: int = randi() % 4
 				match edge:
-					0: pos = Vector2(randf_range(-hw, hw), -hh)  # top
-					1: pos = Vector2(randf_range(-hw, hw), hh)   # bottom
-					2: pos = Vector2(-hw, randf_range(-hh, hh))  # left
-					3: pos = Vector2(hw, randf_range(-hh, hh))   # right
+					0: pos = Vector2(randf_range(-hw, hw), -hh)
+					1: pos = Vector2(randf_range(-hw, hw), hh)
+					2: pos = Vector2(-hw, randf_range(-hh, hh))
+					3: pos = Vector2(hw, randf_range(-hh, hh))
 
 			enemy.position = pos
 			enemy.init(et, _player)
@@ -411,6 +470,7 @@ func _spawn_wave_enemies() -> void:
 			if is_boss and is_boss_encounter:
 				_boss_enemy = enemy
 				enemy.health_changed.connect(_on_boss_health_changed)
+				enemy.boss_segment_lost.connect(_on_boss_segment_lost)
 
 			# Fade in
 			enemy.modulate = Color(1, 1, 1, 0)
@@ -509,6 +569,13 @@ func _on_player_health_changed(current: int, mx: int) -> void:
 
 func _on_boss_health_changed(current: int, mx: int) -> void:
 	_hud.update_boss_bar(current, mx)
+
+func _on_boss_segment_lost(_order_index: int) -> void:
+	if not is_instance_valid(_player):
+		return
+	var MeteorScript: GDScript = load("res://scripts/arena/MeteorStrike.gd")
+	MeteorScript.fire(_arena_container, _player.global_position)
+	_hud.log_msg("[center][color=red]A hand shatters! The sky trembles![/color][/center]")
 
 # ═══════════════════════════════════════════════════════════════════
 # POLISH

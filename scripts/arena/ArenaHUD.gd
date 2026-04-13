@@ -348,7 +348,8 @@ func _draw_boss_bar() -> void:
 	if fill_width > 2.0:
 		w.draw_line(Vector2(1, 2), Vector2(fill_width - 1, 2), Color(1.0, 0.6, 0.3, 0.4), 2.0)
 
-	# Tick marks every 10%
+	# Segment dividers every 10%
 	for i in range(1, 10):
 		var x: float = bar_size.x * (float(i) / 10.0)
-		w.draw_line(Vector2(x, 0), Vector2(x, bar_size.y), Color(0.0, 0.0, 0.0, 0.3), 1.0)
+		w.draw_line(Vector2(x, 0), Vector2(x, bar_size.y), Color(0.0, 0.0, 0.0, 0.9), 3.0)
+		w.draw_line(Vector2(x - 1.5, 1), Vector2(x - 1.5, bar_size.y - 1), Color(1.0, 0.5, 0.2, 0.3), 1.0)
