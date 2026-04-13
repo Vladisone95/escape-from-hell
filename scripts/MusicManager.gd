@@ -55,7 +55,7 @@ func _ready() -> void:
 	sg.buffer_length = 0.12
 	_asp            = AudioStreamPlayer.new()
 	_asp.stream     = sg
-	_asp.volume_db  = -6.0
+	_asp.volume_db  = -80.0
 	add_child(_asp)
 	_asp.play()
 	_pb = _asp.get_stream_playback() as AudioStreamGeneratorPlayback

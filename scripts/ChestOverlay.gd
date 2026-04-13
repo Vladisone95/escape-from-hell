@@ -327,7 +327,7 @@ func _spawn_item_slots_staggered() -> void:
 		var slot := _item_slots[i]
 		var rlbl := rarity_labels[i]
 		var rarity: int = _item_rarities[i]
-		var rcol: Color = Inventory.RARITY_COLORS[rarity]
+		var _rcol: Color = Inventory.RARITY_COLORS[rarity]
 		var base_delay := i * 0.75
 
 		# Phase 1: Rarity label flashes in
@@ -445,8 +445,8 @@ func _create_item_slot(index: int, item_id: String, rarity: int, def: Dictionary
 	sel_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wrapper.add_child(sel_border)
 
-	# Input handling — hover animation
-	var _hover_tw: Tween = null
+	# Input handling — hover animation (array wrapper so lambdas can mutate)
+	var _hover_ref := [null]  # _hover_ref[0] = Tween
 	wrapper.mouse_entered.connect(func() -> void:
 		_tooltip_rarity.text = rarity_name
 		_tooltip_rarity.add_theme_color_override("font_color", rarity_col)
@@ -455,24 +455,24 @@ func _create_item_slot(index: int, item_id: String, rarity: int, def: Dictionary
 		_tooltip.visible = true
 		_tooltip.global_position = Vector2(wrapper.global_position.x, wrapper.global_position.y - 85)
 		# Hover scale bump
-		if _hover_tw and _hover_tw.is_valid():
-			_hover_tw.kill()
-		_hover_tw = create_tween()
+		if _hover_ref[0] and _hover_ref[0].is_valid():
+			_hover_ref[0].kill()
+		_hover_ref[0] = create_tween()
 		var target_scale := Vector2(1.15, 1.15) if _selected_index == index else Vector2(1.08, 1.08)
-		_hover_tw.tween_property(wrapper, "scale", target_scale, 0.12) \
+		_hover_ref[0].tween_property(wrapper, "scale", target_scale, 0.12) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	)
 	wrapper.mouse_exited.connect(func() -> void:
 		_tooltip.visible = false
 		# Return to base scale
-		if _hover_tw and _hover_tw.is_valid():
-			_hover_tw.kill()
-		_hover_tw = create_tween()
+		if _hover_ref[0] and _hover_ref[0].is_valid():
+			_hover_ref[0].kill()
+		_hover_ref[0] = create_tween()
 		var target_scale := Vector2(1.12, 1.12) if _selected_index == index else Vector2.ONE
 		# Dim unselected items if something is selected
 		if _selected_index >= 0 and _selected_index != index:
 			target_scale = Vector2(0.93, 0.93)
-		_hover_tw.tween_property(wrapper, "scale", target_scale, 0.15) \
+		_hover_ref[0].tween_property(wrapper, "scale", target_scale, 0.15) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	)
 	wrapper.gui_input.connect(func(event: InputEvent) -> void:

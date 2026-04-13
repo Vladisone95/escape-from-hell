@@ -12,42 +12,25 @@ var player_spikes: int   = 0
 var player_regen: int    = 1
 
 # Real-time arena stats
-var player_speed: float         = 200.0
-var player_dash_speed: float    = 500.0
+var player_speed: float         = 280.0
+var player_dash_speed: float    = 1000.0
 var player_dash_duration: float = 0.15
-var player_dash_cooldown: float = 0.8
+var player_dash_cooldown: float = 10.0
 var player_attack_cooldown: float = 0.5
-var player_iframes: float       = 0.3
+var player_iframes: float       = 0.5
 
 const TOTAL_WAVES: int   = 10
 
 # Inventory
 var player_inventory: Inventory = Inventory.new()
 
+# Upgrades (from Sacrificial Shrines)
+var player_upgrades: Upgrades = Upgrades.new()
+
 # Waves that offer item rewards instead of (or alongside) normal upgrades
 const ITEM_REWARD_WAVES: Array[int] = [3, 5, 7]
 
-# Wave enemy definitions: Array of [EnemyNode.EType, count]
-# EType: 0=DEMON 1=IMP 2=HELLHOUND
-const WAVE_ENEMIES: Array = [
-	[[1, 2]],                          # Wave  1: 2 Imps
-	[[0, 1]],                          # Wave  2: 1 Demon
-	[[1, 3]],                          # Wave  3: 3 Imps
-	[[0, 1],[1, 2]],                   # Wave  4: 1 Demon + 2 Imps
-	[[0, 2],[2, 1]],                   # Wave  5: 2 Demons + 1 Hellhound
-	[[0, 2],[1, 2]],                   # Wave  6: 2 Demons + 2 Imps
-	[[1, 3],[2, 2]],                   # Wave  7: 3 Imps + 2 Hellhounds
-	[[0, 2],[2, 2]],                   # Wave  8: 2 Demons + 2 Hellhounds
-	[[0, 3],[1, 2],[2, 1]],            # Wave  9: 3 Demons + 2 Imps + 1 Hellhound
-	[[0, 4],[2, 2],[1, 2]],            # Wave 10 (BOSS): 4 Demons + 2 Hellhounds + 2 Imps
-]
-
-# Base stats per enemy type [health, attack, speed, armor]
-const ENEMY_BASE: Array = [
-	[35, 9, 75, 2],   # Demon
-	[18, 4, 130, 0],  # Imp
-	[22, 7, 155, 1],  # Hellhound
-]
+# Enemy stats & wave definitions live in EnemyStats.gd
 
 func _ready() -> void:
 	_create_cursors()
@@ -182,46 +165,55 @@ func reset() -> void:
 	player_spikes     = 0
 	player_regen      = 1
 	player_inventory  = Inventory.new()
-	player_speed         = 200.0
-	player_dash_speed    = 500.0
+	player_upgrades   = Upgrades.new()
+	player_speed         = 280.0
+	player_dash_speed    = 1000.0
 	player_dash_duration = 0.15
-	player_dash_cooldown = 0.8
+	player_dash_cooldown = 10.0
 	player_attack_cooldown = 0.5
-	player_iframes       = 0.3
+	player_iframes       = 0.5
 
 func is_item_reward_wave() -> bool:
 	return current_wave in ITEM_REWARD_WAVES
 
-## Effective attack = base + inventory bonus
+## Effective attack = base + inventory bonus + upgrade bonus
 func effective_attack() -> int:
-	return player_attack + player_inventory.bonus_attack()
+	return player_attack + player_inventory.bonus_attack() + player_upgrades.bonus_attack()
 
-## Number of attacks per turn from inventory
-func attacks_per_turn() -> int:
-	return player_inventory.attacks_per_turn()
+## Number of strikes per attack press from inventory
+func attacks_per_press() -> int:
+	return player_inventory.attacks_per_press()
 
-## Effective max health = base + inventory bonus
+## Effective max health = base + inventory bonus + upgrade bonus
 func effective_max_health() -> int:
-	return player_max_health + player_inventory.bonus_max_health()
+	return player_max_health + player_inventory.bonus_max_health() + player_upgrades.bonus_max_health()
 
-## Effective regen = base + inventory bonus
+## Effective regen = base + inventory bonus + upgrade bonus
 func effective_regen() -> int:
-	return player_regen + player_inventory.bonus_regen()
+	return player_regen + player_inventory.bonus_regen() + player_upgrades.bonus_regen()
+
+## Effective armor = base + upgrade bonus
+func effective_armor() -> int:
+	return player_armor + player_upgrades.bonus_armor()
+
+## Effective speed = base + upgrade bonus
+func effective_speed() -> float:
+	return player_speed + player_upgrades.bonus_speed()
+
+## Effective dash cooldown = base + upgrade bonus
+func effective_dash_cooldown() -> float:
+	return player_dash_cooldown + player_upgrades.bonus_dash_cooldown()
+
+## Effective attack cooldown = base + upgrade bonus
+func effective_attack_cooldown() -> float:
+	return player_attack_cooldown + player_upgrades.bonus_attack_cooldown()
+
+## Effective iframes = base + upgrade bonus
+func effective_iframes() -> float:
+	return player_iframes + player_upgrades.bonus_iframes()
 
 func wave_scale() -> float:
 	return 1.0 + (current_wave - 1) * 0.22
-
-func enemy_health(etype: int) -> int:
-	return int(ENEMY_BASE[etype][0] * wave_scale())
-
-func enemy_attack(etype: int) -> int:
-	return int(ENEMY_BASE[etype][1] * wave_scale())
-
-func enemy_armor(etype: int) -> int:
-	return int(ENEMY_BASE[etype][3] * wave_scale())
-
-func enemy_speed(etype: int) -> float:
-	return ENEMY_BASE[etype][2] * (1.0 + (current_wave - 1) * 0.08)
 
 func is_last_wave() -> bool:
 	return current_wave >= TOTAL_WAVES

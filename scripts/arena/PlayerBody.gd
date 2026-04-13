@@ -2,6 +2,7 @@ extends CharacterBody2D
 
 signal health_changed(current: int, mx: int)
 signal died()
+signal dash_state_changed(cooldown_remaining: float, cooldown_total: float)
 
 var sprite: Node2D
 var hurtbox: Area2D
@@ -17,16 +18,18 @@ var _facing_dir: Vector2 = Vector2.DOWN
 var _is_dead: bool = false
 
 func _ready() -> void:
+	add_to_group("player")
 	# Collision shape
 	var col := CollisionShape2D.new()
 	var shape := CircleShape2D.new()
-	shape.radius = 14.0
+	shape.radius = 28.0
 	col.shape = shape
 	add_child(col)
 
 	# Sprite
 	sprite = Node2D.new()
 	sprite.set_script(load("res://scripts/arena/PlayerArenaSprite.gd"))
+	sprite.scale = Vector2(2, 2)
 	add_child(sprite)
 	sprite.start_idle()
 
@@ -37,7 +40,7 @@ func _ready() -> void:
 	hurtbox.collision_mask = 1 << 4   # layer 5: enemy_attack
 	var hb_shape := CollisionShape2D.new()
 	var hb_circle := CircleShape2D.new()
-	hb_circle.radius = 16.0
+	hb_circle.radius = 32.0
 	hb_shape.shape = hb_circle
 	hurtbox.add_child(hb_shape)
 	add_child(hurtbox)
@@ -46,7 +49,8 @@ func _ready() -> void:
 	# Health bar
 	health_bar = Node2D.new()
 	health_bar.set_script(load("res://scripts/arena/HealthBar.gd"))
-	health_bar.bar_width = 40.0
+	health_bar.bar_width = 80.0
+	health_bar.y_offset = -48.0
 	add_child(health_bar)
 
 	# Body collision
@@ -69,14 +73,17 @@ func _physics_process(delta: float) -> void:
 
 	# Movement
 	if _is_dashing:
-		velocity = _dash_dir * GameData.player_dash_speed
+		velocity = _dash_dir * GameData.player_dash_speed  # dash speed stays raw
 	else:
 		var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-		velocity = input_dir.normalized() * GameData.player_speed + _knockback_vel
+		velocity = input_dir.normalized() * GameData.effective_speed() + _knockback_vel
 
 		if input_dir.length_squared() > 0.01:
-			_facing_dir = input_dir.normalized()
-			sprite.set_facing_from_vec(_facing_dir)
+			var new_dir := input_dir.normalized()
+			# Only update facing when direction changes meaningfully (>15° shift)
+			if _facing_dir.dot(new_dir) < 0.966:
+				sprite.set_facing_from_vec(new_dir)
+			_facing_dir = new_dir
 			sprite.start_walk()
 		else:
 			if sprite._is_walking:
@@ -84,7 +91,7 @@ func _physics_process(delta: float) -> void:
 				sprite.start_idle()
 
 	# Knockback decay
-	_knockback_vel = _knockback_vel.move_toward(Vector2.ZERO, 600.0 * delta)
+	_knockback_vel = _knockback_vel.move_toward(Vector2.ZERO, 1200.0 * delta)
 
 	move_and_slide()
 
@@ -102,11 +109,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		_do_interact()
 
 func _do_attack() -> void:
-	var cooldown := GameData.player_attack_cooldown
-	if GameData.attacks_per_turn() > 1:
-		cooldown *= 0.6
-	_attack_cooldown = cooldown
+	_attack_cooldown = GameData.effective_attack_cooldown()
 
+	var strike_count := GameData.attacks_per_press()
+	for strike in strike_count:
+		if strike > 0:
+			await get_tree().create_timer(0.15).timeout
+			if not is_inside_tree():
+				return
+		_spawn_strike()
+
+func _spawn_strike() -> void:
 	var dmg := GameData.effective_attack()
 	var AttackHitbox := load("res://scripts/arena/AttackHitbox.gd")
 
@@ -114,9 +127,9 @@ func _do_attack() -> void:
 	var hitbox := Area2D.new()
 	hitbox.set_script(AttackHitbox)
 	hitbox.damage = dmg
-	hitbox.knockback_force = 150.0
+	hitbox.knockback_force = 300.0
 	hitbox.source = self
-	hitbox.position = _facing_dir * 20.0
+	hitbox.position = _facing_dir * 40.0
 	hitbox.collision_layer = 1 << 3  # layer 4: player_attack
 	hitbox.collision_mask = 1 << 2   # layer 3: enemy_body — actually we need enemy hurtbox
 
@@ -126,29 +139,29 @@ func _do_attack() -> void:
 	for i in 5:
 		var t := float(i) / 4.0
 		var a := angle_base - arc_spread + t * arc_spread * 2.0
-		var offset := Vector2(cos(a), sin(a)) * 20.0
+		var offset := Vector2(cos(a), sin(a)) * 40.0
 		var s := CollisionShape2D.new()
 		var c := CircleShape2D.new()
-		c.radius = 14.0
+		c.radius = 28.0
 		s.shape = c
 		s.position = offset
 		hitbox.add_child(s)
 
-	# Hitbox detects enemy hurtboxes
+	# Hitbox detects enemy hurtboxes (layer 3 = enemy_body, where hurtboxes live)
 	hitbox.collision_layer = 1 << 3  # layer 4: player_attack
-	hitbox.collision_mask = 0  # We detect via area_entered with hurtboxes
+	hitbox.collision_mask = 1 << 2   # layer 3: enemy hurtboxes
 
 	get_parent().add_child(hitbox)
-	hitbox.global_position = global_position + _facing_dir * 20.0
+	hitbox.global_position = global_position + _facing_dir * 40.0
 
 	# Attack arc visual — white semi-transparent fan showing attack range
 	var arc_vis := Node2D.new()
-	arc_vis.z_index = -1
+	arc_vis.z_index = 10
 	get_parent().add_child(arc_vis)
-	arc_vis.global_position = global_position
+	arc_vis.global_position = global_position + _facing_dir * 40.0
 	var _angle_base_vis := _facing_dir.angle()
 	var _arc_spread_vis := deg_to_rad(60.0)
-	var _arc_radius_vis := 50.0
+	var _arc_radius_vis := 68.0
 	arc_vis.draw.connect(func():
 		var pts := PackedVector2Array()
 		pts.append(Vector2.ZERO)
@@ -164,30 +177,20 @@ func _do_attack() -> void:
 			arc_vis.queue_free()
 	)
 
-	# Connect to detect hurtboxes
-	var hit_targets: Array[Node] = []
-	hitbox.area_entered.connect(func(area: Area2D):
-		if area == hurtbox:
-			return
-		if area.has_method("receive_hit") and area not in hit_targets:
-			hit_targets.append(area)
-			var dir := (_facing_dir).normalized()
-			area.receive_hit(dmg, dir * 150.0)
-	)
-
 	sprite.play_attack()
 
-	# Hitbox lifetime
-	get_tree().create_timer(0.15).timeout.connect(func():
-		if is_instance_valid(hitbox):
-			hitbox.queue_free()
-	)
+func get_dash_cooldown_remaining() -> float:
+	return maxf(0.0, _dash_cooldown)
+
+func get_dash_cooldown_total() -> float:
+	return GameData.effective_dash_cooldown()
 
 func _do_dash() -> void:
 	_is_dashing = true
 	_dash_dir = _facing_dir
 	_dash_timer = GameData.player_dash_duration
-	_dash_cooldown = GameData.player_dash_cooldown
+	_dash_cooldown = GameData.effective_dash_cooldown()
+	dash_state_changed.emit(_dash_cooldown, GameData.effective_dash_cooldown())
 	hurtbox.start_iframes(GameData.player_dash_duration)
 	# Visual feedback
 	var tw := create_tween()
@@ -195,29 +198,30 @@ func _do_dash() -> void:
 	tw.tween_property(sprite, "modulate", Color(1, 1, 1, 1.0), GameData.player_dash_duration)
 
 func _do_interact() -> void:
-	# Check for nearby interactable areas
-	var space := get_world_2d().direct_space_state
-	var query := PhysicsPointQueryParameters2D.new()
-	query.position = global_position + _facing_dir * 30.0
-	query.collision_mask = 1 << 5  # We'll use a specific interact layer later
-	var results := space.intersect_point(query, 4)
-	for r in results:
-		var collider = r["collider"]
-		if collider.has_method("interact"):
-			collider.interact()
-			return
+	# Find nearest interactable in range
+	var best_dist := 999999.0
+	var best_target: Node2D = null
+	for node in get_tree().get_nodes_in_group("interactable"):
+		if node is Node2D and node.has_method("interact"):
+			var dist := global_position.distance_to(node.global_position)
+			if dist < best_dist:
+				best_dist = dist
+				best_target = node
+	if best_target and best_dist <= 120.0:
+		best_target.interact()
 
 func _on_hit(damage: int, knockback_dir: Vector2) -> void:
 	if _is_dead:
 		return
-	var actual := maxi(0, damage - GameData.player_armor)
+	var actual := maxi(0, damage - GameData.effective_armor())
 	GameData.player_health -= actual
 	health_bar.update_health(GameData.player_health, GameData.effective_max_health())
 	health_changed.emit(GameData.player_health, GameData.effective_max_health())
 
 	_knockback_vel = knockback_dir
-	hurtbox.start_iframes(GameData.player_iframes)
+	hurtbox.start_iframes(GameData.effective_iframes())
 	sprite.play_hurt()
+	_flash_iframes(GameData.effective_iframes())
 
 	# Spawn damage number
 	var DmgNum := load("res://scripts/arena/DamageNumber.gd")
@@ -227,6 +231,14 @@ func _on_hit(damage: int, knockback_dir: Vector2) -> void:
 		_is_dead = true
 		sprite.play_die()
 		died.emit()
+
+func _flash_iframes(duration: float) -> void:
+	var tw := create_tween()
+	var flashes := int(duration / 0.1)
+	for i in flashes:
+		tw.tween_property(sprite, "modulate:a", 0.2, 0.05)
+		tw.tween_property(sprite, "modulate:a", 1.0, 0.05)
+	tw.tween_property(sprite, "modulate", Color.WHITE, 0.0)
 
 func get_facing() -> Vector2:
 	return _facing_dir

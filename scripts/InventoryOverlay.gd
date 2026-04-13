@@ -9,11 +9,14 @@ extends Control
 signal next_stage_pressed
 
 var _grid: GridContainer
+var _upgrade_grid: GridContainer
 var _tooltip: PanelContainer
 var _tooltip_name: Label
 var _tooltip_desc: Label
-var _player_sprite: PlayerSprite
+var _tooltip_rarity: Label
+var _player_sprite: Node2D
 var _empty_label: Label
+var _upgrade_empty_label: Label
 var _stat_hp: Label
 var _stat_atk: Label
 var _stat_def: Label
@@ -62,8 +65,22 @@ func _build_ui() -> void:
 	sprite_center.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	left_panel.add_child(sprite_center)
 
-	_player_sprite = PlayerSprite.new()
-	sprite_center.add_child(_player_sprite)
+	var viewport_container := SubViewportContainer.new()
+	viewport_container.custom_minimum_size = Vector2(300, 300)
+	viewport_container.stretch = true
+	sprite_center.add_child(viewport_container)
+
+	var sub_viewport := SubViewport.new()
+	sub_viewport.size = Vector2i(300, 300)
+	sub_viewport.transparent_bg = true
+	sub_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	viewport_container.add_child(sub_viewport)
+
+	var arena_sprite = load("res://scripts/arena/PlayerArenaSprite.gd").new()
+	arena_sprite.position = Vector2(150, 175)
+	arena_sprite.scale = Vector2(5, 5)
+	sub_viewport.add_child(arena_sprite)
+	_player_sprite = arena_sprite
 
 	# Stat labels (vertical list below sprite, hoverable for tooltips)
 	var stats_box := VBoxContainer.new()
@@ -126,6 +143,34 @@ func _build_ui() -> void:
 	_empty_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right_panel.add_child(_empty_label)
 
+	# ── Upgrades section ────────────────────────────────────────────────
+	var upgrade_divider := HSeparator.new()
+	upgrade_divider.add_theme_constant_override("separation", 8)
+	right_panel.add_child(upgrade_divider)
+
+	var upg_title := Label.new()
+	upg_title.text = "UPGRADES"
+	upg_title.add_theme_font_size_override("font_size", 28)
+	upg_title.add_theme_color_override("font_color", Color(0.9, 0.20, 0.15))
+	upg_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	right_panel.add_child(upg_title)
+
+	_upgrade_grid = GridContainer.new()
+	_upgrade_grid.columns = 5
+	_upgrade_grid.add_theme_constant_override("h_separation", 8)
+	_upgrade_grid.add_theme_constant_override("v_separation", 8)
+	_upgrade_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_panel.add_child(_upgrade_grid)
+
+	_upgrade_empty_label = Label.new()
+	_upgrade_empty_label.text = "No blessings yet..."
+	_upgrade_empty_label.add_theme_font_size_override("font_size", 18)
+	_upgrade_empty_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	_upgrade_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_upgrade_empty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_upgrade_empty_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_panel.add_child(_upgrade_empty_label)
+
 	# ── Bottom: Next Stage button ───────────────────────────────────────
 	var btn_bar := CenterContainer.new()
 	btn_bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
@@ -157,6 +202,11 @@ func _build_ui() -> void:
 	var tip_vbox := VBoxContainer.new()
 	tip_vbox.add_theme_constant_override("separation", 4)
 	_tooltip.add_child(tip_vbox)
+
+	_tooltip_rarity = Label.new()
+	_tooltip_rarity.add_theme_font_size_override("font_size", 13)
+	_tooltip_rarity.visible = false
+	tip_vbox.add_child(_tooltip_rarity)
 
 	_tooltip_name = Label.new()
 	_tooltip_name.add_theme_font_size_override("font_size", 18)
@@ -210,17 +260,44 @@ func refresh() -> void:
 	# Update stat labels (always show all stats on inventory screen)
 	_stat_hp.text  = "Health:  %d / %d" % [GameData.player_health, GameData.effective_max_health()]
 	_stat_atk.text = "Attack:  %d" % GameData.effective_attack()
-	_stat_def.text = "Armor:  %d" % GameData.player_armor
+	_stat_def.text = "Armor:  %d" % GameData.effective_armor()
 	_stat_spk.text = "Spikes:  %d" % GameData.player_spikes
 	_stat_reg.text = "Regen:  %d" % GameData.effective_regen()
 
+	# Populate upgrade grid
+	for child in _upgrade_grid.get_children():
+		child.queue_free()
+
+	var upg_slots: Array[Dictionary] = GameData.player_upgrades.slots
+	_upgrade_empty_label.visible = upg_slots.is_empty()
+	_upgrade_grid.visible = not upg_slots.is_empty()
+
+	for slot: Dictionary in upg_slots:
+		var thumb := UpgradeThumbnail.new(slot["id"], slot["count"])
+		thumb.hovered.connect(_on_upgrade_hovered)
+		thumb.unhovered.connect(_on_upgrade_unhovered)
+		_upgrade_grid.add_child(thumb)
+
 
 func _on_item_hovered(item_def: Dictionary, gpos: Vector2) -> void:
+	_tooltip_rarity.visible = false
 	_tooltip_name.text = item_def.get("name", "")
 	_tooltip_desc.text = item_def.get("description", "")
 	_tooltip.visible = true
-	# Position above the thumbnail
 	_tooltip.global_position = Vector2(gpos.x, gpos.y - 70)
 
 func _on_item_unhovered() -> void:
+	_tooltip.visible = false
+
+func _on_upgrade_hovered(upgrade_def: Dictionary, gpos: Vector2) -> void:
+	var rarity: int = upgrade_def.get("rarity", 0)
+	_tooltip_rarity.text = Inventory.RARITY_NAMES[rarity]
+	_tooltip_rarity.add_theme_color_override("font_color", Inventory.RARITY_COLORS[rarity])
+	_tooltip_rarity.visible = true
+	_tooltip_name.text = upgrade_def.get("name", "")
+	_tooltip_desc.text = upgrade_def.get("description", "")
+	_tooltip.visible = true
+	_tooltip.global_position = Vector2(gpos.x, gpos.y - 85)
+
+func _on_upgrade_unhovered() -> void:
 	_tooltip.visible = false

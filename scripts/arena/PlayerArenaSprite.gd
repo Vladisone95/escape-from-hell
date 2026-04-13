@@ -3,7 +3,7 @@ extends Node2D
 enum Facing { DOWN, UP, LEFT, RIGHT }
 var facing: int = Facing.DOWN
 
-# Colors (same as PlayerSprite.gd)
+# Colors
 const COL_HELMET      := Color(0.40, 0.42, 0.50)
 const COL_HELMET_DARK := Color(0.20, 0.22, 0.30)
 const COL_VISOR_GLOW  := Color(0.4, 0.8, 1.0, 0.9)
@@ -22,20 +22,33 @@ const COL_BELT        := Color(0.50, 0.35, 0.12)
 var bob_y: float = 0.0
 var arm_angle: float = 0.0
 var hurt_flash: float = 0.0
-var walk_cycle: float = 0.0  # 0 to 1, oscillates during walk
+var walk_cycle: float = 0.0
 
 var _idle_tween: Tween
-var _walk_tween: Tween
 var _is_walking: bool = false
+var _walk_phase: float = 0.0  # continuous phase for smooth sine-wave walk
 
-func _process(_d: float) -> void:
+const WALK_SPEED: float = 10.0  # radians/sec for walk cycle
+const WALK_AMPLITUDE: float = 1.0
+const WALK_DECAY_SPEED: float = 8.0  # how fast walk_cycle decays to 0 when stopping
+
+func _process(d: float) -> void:
+	if _is_walking:
+		_walk_phase += d * WALK_SPEED
+		walk_cycle = 0.5 + 0.5 * sin(_walk_phase)
+	else:
+		# Smoothly decay walk_cycle to 0.5 (neutral leg position) then to 0
+		if absf(walk_cycle) > 0.01:
+			walk_cycle = move_toward(walk_cycle, 0.5, d * WALK_DECAY_SPEED)
+			if absf(walk_cycle - 0.5) < 0.02:
+				walk_cycle = 0.0
 	queue_redraw()
 
 func start_idle() -> void:
 	_stop_walk()
 	_kill_idle()
 	_idle_tween = create_tween().set_loops()
-	_idle_tween.tween_property(self, "bob_y", -2.5, 0.85).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_idle_tween.tween_property(self, "bob_y", -1.0, 0.85).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_idle_tween.tween_property(self, "bob_y", 0.0, 0.85).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 func start_walk() -> void:
@@ -43,24 +56,14 @@ func start_walk() -> void:
 		return
 	_is_walking = true
 	_kill_idle()
-	_kill_walk()
-	_walk_tween = create_tween().set_loops()
-	_walk_tween.tween_property(self, "walk_cycle", 1.0, 0.25).set_trans(Tween.TRANS_SINE)
-	_walk_tween.tween_property(self, "walk_cycle", 0.0, 0.25).set_trans(Tween.TRANS_SINE)
 
 func _stop_walk() -> void:
 	_is_walking = false
-	_kill_walk()
-	walk_cycle = 0.0
 
 func _kill_idle() -> void:
 	if _idle_tween and _idle_tween.is_valid(): _idle_tween.kill()
 	_idle_tween = null
 	bob_y = 0.0
-
-func _kill_walk() -> void:
-	if _walk_tween and _walk_tween.is_valid(): _walk_tween.kill()
-	_walk_tween = null
 
 func play_attack() -> void:
 	var tw := create_tween()
@@ -87,84 +90,93 @@ func play_die() -> void:
 	visible = false
 
 func set_facing_from_vec(dir: Vector2) -> void:
-	if abs(dir.x) >= abs(dir.y):
-		facing = Facing.RIGHT if dir.x > 0 else Facing.LEFT
+	# Hysteresis: bias toward current facing to prevent flip-flopping near diagonals
+	var ax := absf(dir.x)
+	var ay := absf(dir.y)
+	var is_currently_horizontal := (facing == Facing.LEFT or facing == Facing.RIGHT)
+	# Require ~55% dominance in the other axis to switch orientation
+	var threshold := 1.3
+	if is_currently_horizontal:
+		# Currently horizontal — only switch to vertical if y clearly dominates
+		if ay > ax * threshold:
+			facing = Facing.DOWN if dir.y > 0 else Facing.UP
+		elif ax > 0.01:
+			facing = Facing.RIGHT if dir.x > 0 else Facing.LEFT
 	else:
-		facing = Facing.DOWN if dir.y > 0 else Facing.UP
+		# Currently vertical — only switch to horizontal if x clearly dominates
+		if ax > ay * threshold:
+			facing = Facing.RIGHT if dir.x > 0 else Facing.LEFT
+		elif ay > 0.01:
+			facing = Facing.DOWN if dir.y > 0 else Facing.UP
 
 func _tc(base: Color) -> Color:
 	return base.lerp(Color(1.0, 0.12, 0.08), hurt_flash)
 
-# Walk offset for legs
 func _leg_offset() -> float:
-	return (walk_cycle - 0.5) * 8.0  # -4 to +4
+	return (walk_cycle - 0.5) * 3.0
 
 func _draw() -> void:
 	match facing:
 		Facing.DOWN:  _draw_front()
 		Facing.UP:    _draw_back()
 		Facing.LEFT:
-			scale.x = -1
-			_draw_side()
-			scale.x = 1
-		Facing.RIGHT: _draw_side()
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2(-1, 1))
+			_draw_side(true)
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		Facing.RIGHT: _draw_side(false)
 
-# ── FRONT VIEW (ported from PlayerSprite.gd, recentered to 0,0) ──
+# ── FRONT VIEW — chibi proportions, fits within ~32px diameter ──
 func _draw_front() -> void:
 	var oy := bob_y
 	var lo := _leg_offset()
 
 	# Left arm (behind body)
-	draw_rect(Rect2(-24, -11 + oy, 10, 22), _tc(COL_ARMOR_DARK))
-	draw_rect(Rect2(-23, 9 + oy, 8, 5), _tc(COL_SKIN))
+	draw_rect(Rect2(-14, -3 + oy, 5, 12), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(-14, 8 + oy, 4, 3), _tc(COL_SKIN))
 
 	# Legs
-	draw_rect(Rect2(-12, 15 + oy + lo, 11, 34), _tc(COL_ARMOR_DARK))
-	draw_rect(Rect2(1, 15 + oy - lo, 11, 34), _tc(COL_ARMOR_DARK))
-	draw_rect(Rect2(-10, 27 + oy + lo, 7, 3), _tc(COL_ARMOR))
-	draw_rect(Rect2(3, 27 + oy - lo, 7, 3), _tc(COL_ARMOR))
+	draw_rect(Rect2(-7, 10 + oy + lo, 6, 8), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(1, 10 + oy - lo, 6, 8), _tc(COL_ARMOR_DARK))
 
 	# Boots
-	draw_rect(Rect2(-14, 45 + oy + lo, 15, 10), _tc(COL_BOOT))
-	draw_rect(Rect2(-1, 45 + oy - lo, 15, 10), _tc(COL_BOOT))
+	draw_rect(Rect2(-8, 16 + oy + lo, 8, 4), _tc(COL_BOOT))
+	draw_rect(Rect2(0, 16 + oy - lo, 8, 4), _tc(COL_BOOT))
 
 	# Torso
-	draw_rect(Rect2(-14, -21 + oy, 28, 36), _tc(COL_ARMOR))
-	draw_rect(Rect2(-10, -18 + oy, 20, 4), _tc(COL_ARMOR_LIGHT))
-	draw_line(Vector2(0, -18 + oy), Vector2(-8, -3 + oy), _tc(COL_ARMOR_LIGHT), 1.5)
-	draw_line(Vector2(0, -18 + oy), Vector2(8, -3 + oy), _tc(COL_ARMOR_LIGHT), 1.5)
+	draw_rect(Rect2(-9, -6 + oy, 18, 16), _tc(COL_ARMOR))
+	draw_rect(Rect2(-7, -4 + oy, 14, 3), _tc(COL_ARMOR_LIGHT))
+	# V-detail on chest
+	draw_line(Vector2(0, -4 + oy), Vector2(-5, 4 + oy), _tc(COL_ARMOR_LIGHT), 1.0)
+	draw_line(Vector2(0, -4 + oy), Vector2(5, 4 + oy), _tc(COL_ARMOR_LIGHT), 1.0)
 
 	# Belt
-	draw_rect(Rect2(-16, 9 + oy, 32, 5), _tc(COL_BELT))
-	draw_rect(Rect2(-3, 9 + oy, 6, 5), _tc(COL_GUARD))
+	draw_rect(Rect2(-10, 7 + oy, 20, 3), _tc(COL_BELT))
+	draw_rect(Rect2(-2, 7 + oy, 4, 3), _tc(COL_GUARD))
 
 	# Shoulders
-	draw_rect(Rect2(-22, -21 + oy, 10, 12), _tc(COL_ARMOR_LIGHT))
-	draw_rect(Rect2(12, -21 + oy, 10, 12), _tc(COL_ARMOR_LIGHT))
-	draw_rect(Rect2(-22, -21 + oy, 10, 3), _tc(COL_ARMOR_LIGHT.lightened(0.2)))
-	draw_rect(Rect2(12, -21 + oy, 10, 3), _tc(COL_ARMOR_LIGHT.lightened(0.2)))
+	draw_rect(Rect2(-13, -6 + oy, 6, 7), _tc(COL_ARMOR_LIGHT))
+	draw_rect(Rect2(7, -6 + oy, 6, 7), _tc(COL_ARMOR_LIGHT))
+	draw_rect(Rect2(-13, -6 + oy, 6, 2), _tc(COL_ARMOR_LIGHT.lightened(0.2)))
+	draw_rect(Rect2(7, -6 + oy, 6, 2), _tc(COL_ARMOR_LIGHT.lightened(0.2)))
 
-	# Neck
-	draw_rect(Rect2(-4, -25 + oy, 8, 5), _tc(COL_SKIN))
-
-	# Head
-	draw_circle(Vector2(0, -37 + oy), 14.0, _tc(COL_HELMET))
-	draw_rect(Rect2(-2, -51 + oy, 4, 10), _tc(COL_HELMET.lightened(0.15)))
-	draw_rect(Rect2(-10, -39 + oy, 20, 7), _tc(COL_HELMET_DARK))
-	draw_rect(Rect2(-7, -37 + oy, 5, 3), _tc(COL_VISOR_GLOW))
-	draw_rect(Rect2(2, -37 + oy, 5, 3), _tc(COL_VISOR_GLOW))
+	# Head (large chibi head)
+	draw_circle(Vector2(0, -12 + oy), 9.0, _tc(COL_HELMET))
+	draw_rect(Rect2(-1, -21 + oy, 2, 5), _tc(COL_HELMET.lightened(0.15)))  # crest
+	draw_rect(Rect2(-7, -14 + oy, 14, 5), _tc(COL_HELMET_DARK))  # visor band
+	draw_rect(Rect2(-5, -13 + oy, 4, 2), _tc(COL_VISOR_GLOW))  # left eye
+	draw_rect(Rect2(1, -13 + oy, 4, 2), _tc(COL_VISOR_GLOW))   # right eye
 
 	# Right arm + sword
-	var shoulder := Vector2(17, -17 + oy)
+	var shoulder := Vector2(10, -4 + oy)
 	draw_set_transform(shoulder, arm_angle, Vector2.ONE)
-	draw_rect(Rect2(-5, 0, 10, 14), _tc(COL_ARMOR_DARK))
-	draw_rect(Rect2(-4, 13, 8, 12), _tc(COL_ARMOR))
-	draw_rect(Rect2(-3, 23, 6, 5), _tc(COL_SKIN))
-	draw_rect(Rect2(-2, 19, 4, 9), _tc(COL_HILT))
-	draw_rect(Rect2(-6, 17, 12, 3), _tc(COL_GUARD))
-	draw_rect(Rect2(-1.5, -16, 3, 34), _tc(COL_BLADE))
-	draw_rect(Rect2(0, -16, 1, 34), _tc(COL_BLADE_EDGE))
-	draw_rect(Rect2(-1, -20, 2, 5), _tc(COL_BLADE_EDGE))
+	draw_rect(Rect2(-3, 0, 6, 8), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(-2, 7, 5, 6), _tc(COL_ARMOR))
+	draw_rect(Rect2(-2, 12, 4, 3), _tc(COL_SKIN))
+	draw_rect(Rect2(-1, 10, 3, 6), _tc(COL_HILT))
+	draw_rect(Rect2(-4, 9, 8, 2), _tc(COL_GUARD))
+	draw_rect(Rect2(-1, -10, 2, 20), _tc(COL_BLADE))
+	draw_rect(Rect2(0, -10, 1, 20), _tc(COL_BLADE_EDGE))
+	draw_rect(Rect2(-0.5, -13, 1, 3), _tc(COL_BLADE_EDGE))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 # ── BACK VIEW ──
@@ -172,91 +184,109 @@ func _draw_back() -> void:
 	var oy := bob_y
 	var lo := _leg_offset()
 
-	# Legs
-	draw_rect(Rect2(-12, 15 + oy + lo, 11, 34), _tc(COL_ARMOR_DARK))
-	draw_rect(Rect2(1, 15 + oy - lo, 11, 34), _tc(COL_ARMOR_DARK))
-	# Boots
-	draw_rect(Rect2(-14, 45 + oy + lo, 15, 10), _tc(COL_BOOT))
-	draw_rect(Rect2(-1, 45 + oy - lo, 15, 10), _tc(COL_BOOT))
-
-	# Torso back plate
-	draw_rect(Rect2(-14, -21 + oy, 28, 36), _tc(COL_ARMOR_DARK))
-	# Spine line
-	draw_line(Vector2(0, -18 + oy), Vector2(0, 12 + oy), _tc(COL_ARMOR.darkened(0.2)), 2.0)
-	# Back plate edges
-	draw_rect(Rect2(-14, -21 + oy, 3, 36), _tc(COL_ARMOR))
-	draw_rect(Rect2(11, -21 + oy, 3, 36), _tc(COL_ARMOR))
-
-	# Belt
-	draw_rect(Rect2(-16, 9 + oy, 32, 5), _tc(COL_BELT))
-
-	# Shoulders
-	draw_rect(Rect2(-22, -21 + oy, 10, 12), _tc(COL_ARMOR_LIGHT))
-	draw_rect(Rect2(12, -21 + oy, 10, 12), _tc(COL_ARMOR_LIGHT))
-
-	# Arms behind
-	draw_rect(Rect2(-24, -11 + oy, 10, 22), _tc(COL_ARMOR_DARK))
-	draw_rect(Rect2(14, -11 + oy, 10, 22), _tc(COL_ARMOR_DARK))
-
-	# Neck
-	draw_rect(Rect2(-4, -25 + oy, 8, 5), _tc(COL_SKIN))
-
-	# Head back — helmet rear
-	draw_circle(Vector2(0, -37 + oy), 14.0, _tc(COL_HELMET))
-	draw_rect(Rect2(-2, -51 + oy, 4, 10), _tc(COL_HELMET.lightened(0.15)))
-	# Helmet back detail
-	draw_rect(Rect2(-8, -38 + oy, 16, 6), _tc(COL_HELMET_DARK))
-
-	# Sword on back (diagonal)
-	draw_set_transform(Vector2(8, -15 + oy), 0.2, Vector2.ONE)
-	draw_rect(Rect2(-1.5, -20, 3, 34), _tc(COL_BLADE))
-	draw_rect(Rect2(-5, 12, 10, 3), _tc(COL_GUARD))
-	draw_rect(Rect2(-1.5, 14, 3, 8), _tc(COL_HILT))
+	# Sword arm behind
+	var shoulder := Vector2(10, -4 + oy)
+	draw_set_transform(shoulder, arm_angle, Vector2.ONE)
+	draw_rect(Rect2(-3, 0, 6, 8), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(-2, 7, 5, 6), _tc(COL_ARMOR))
+	draw_rect(Rect2(-2, 12, 4, 3), _tc(COL_SKIN))
+	draw_rect(Rect2(-1, 10, 3, 6), _tc(COL_HILT))
+	draw_rect(Rect2(-4, 9, 8, 2), _tc(COL_GUARD))
+	draw_rect(Rect2(-1, -10, 2, 18), _tc(COL_BLADE))
+	draw_rect(Rect2(0, -10, 1, 18), _tc(COL_BLADE_EDGE))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
+	# Legs
+	draw_rect(Rect2(-7, 10 + oy + lo, 6, 8), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(1, 10 + oy - lo, 6, 8), _tc(COL_ARMOR_DARK))
+	# Boots
+	draw_rect(Rect2(-8, 16 + oy + lo, 8, 4), _tc(COL_BOOT))
+	draw_rect(Rect2(0, 16 + oy - lo, 8, 4), _tc(COL_BOOT))
+
+	# Torso back plate
+	draw_rect(Rect2(-9, -6 + oy, 18, 16), _tc(COL_ARMOR_DARK))
+	draw_line(Vector2(0, -4 + oy), Vector2(0, 8 + oy), _tc(COL_ARMOR.darkened(0.2)), 1.5)
+	draw_rect(Rect2(-9, -6 + oy, 2, 16), _tc(COL_ARMOR))
+	draw_rect(Rect2(7, -6 + oy, 2, 16), _tc(COL_ARMOR))
+
+	# Belt
+	draw_rect(Rect2(-10, 7 + oy, 20, 3), _tc(COL_BELT))
+
+	# Shoulders
+	draw_rect(Rect2(-13, -6 + oy, 6, 7), _tc(COL_ARMOR_LIGHT))
+	draw_rect(Rect2(7, -6 + oy, 6, 7), _tc(COL_ARMOR_LIGHT))
+
+	# Arms behind
+	draw_rect(Rect2(-14, -3 + oy, 5, 12), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(9, -3 + oy, 5, 12), _tc(COL_ARMOR_DARK))
+
+	# Shield on back
+	draw_rect(Rect2(-5, -3 + oy, 10, 12), _tc(COL_ARMOR))
+	draw_rect(Rect2(-4, -2 + oy, 8, 10), _tc(COL_ARMOR_LIGHT))
+	draw_rect(Rect2(-1, 1 + oy, 2, 4), _tc(COL_GUARD))
+
+	# Head back
+	draw_circle(Vector2(0, -12 + oy), 9.0, _tc(COL_HELMET))
+	draw_rect(Rect2(-1, -21 + oy, 2, 5), _tc(COL_HELMET.lightened(0.15)))
+	draw_rect(Rect2(-6, -14 + oy, 12, 4), _tc(COL_HELMET_DARK))
+
 # ── SIDE VIEW (drawn facing right, flipped for left) ──
-func _draw_side() -> void:
+func _draw_side(flipped: bool = false) -> void:
 	var oy := bob_y
 	var lo := _leg_offset()
 
+	# Shield on back arm (behind body)
+	draw_rect(Rect2(-10, -1 + oy, 5, 10), _tc(COL_ARMOR))
+	draw_rect(Rect2(-9, 0 + oy, 3, 8), _tc(COL_ARMOR_LIGHT))
+
 	# Back leg
-	draw_rect(Rect2(-4, 15 + oy - lo, 11, 34), _tc(COL_ARMOR_DARK.darkened(0.15)))
-	draw_rect(Rect2(-6, 45 + oy - lo, 14, 10), _tc(COL_BOOT.darkened(0.1)))
+	draw_rect(Rect2(-3, 10 + oy - lo, 6, 8), _tc(COL_ARMOR_DARK.darkened(0.15)))
+	draw_rect(Rect2(-4, 16 + oy - lo, 8, 4), _tc(COL_BOOT.darkened(0.1)))
 
 	# Front leg
-	draw_rect(Rect2(-4, 15 + oy + lo, 11, 34), _tc(COL_ARMOR_DARK))
-	draw_rect(Rect2(-6, 45 + oy + lo, 14, 10), _tc(COL_BOOT))
+	draw_rect(Rect2(-3, 10 + oy + lo, 6, 8), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(-4, 16 + oy + lo, 8, 4), _tc(COL_BOOT))
 
 	# Torso (narrower from side)
-	draw_rect(Rect2(-8, -21 + oy, 18, 36), _tc(COL_ARMOR))
-	draw_rect(Rect2(-8, -21 + oy, 4, 36), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(-5, -6 + oy, 5, 16), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(0, -6 + oy, 6, 16), _tc(COL_ARMOR))
+	draw_rect(Rect2(5, -5 + oy, 1, 14), _tc(COL_ARMOR_LIGHT))
 	# Shoulder pad
-	draw_rect(Rect2(6, -21 + oy, 8, 12), _tc(COL_ARMOR_LIGHT))
+	draw_rect(Rect2(3, -6 + oy, 5, 7), _tc(COL_ARMOR_LIGHT))
+	draw_rect(Rect2(3, -6 + oy, 5, 2), _tc(COL_ARMOR_LIGHT.lightened(0.2)))
 
 	# Belt
-	draw_rect(Rect2(-10, 9 + oy, 22, 5), _tc(COL_BELT))
-
-	# Neck
-	draw_rect(Rect2(-2, -25 + oy, 6, 5), _tc(COL_SKIN))
+	draw_rect(Rect2(-6, 7 + oy, 14, 3), _tc(COL_BELT))
+	draw_rect(Rect2(4, 7 + oy, 3, 3), _tc(COL_GUARD))
 
 	# Head (side profile)
-	draw_circle(Vector2(2, -37 + oy), 13.0, _tc(COL_HELMET))
-	# Visor side
-	draw_rect(Rect2(2, -39 + oy, 14, 6), _tc(COL_HELMET_DARK))
-	# Eye
-	draw_rect(Rect2(8, -38 + oy, 5, 3), _tc(COL_VISOR_GLOW))
-	# Crest
-	draw_rect(Rect2(0, -51 + oy, 4, 10), _tc(COL_HELMET.lightened(0.15)))
+	draw_circle(Vector2(1, -12 + oy), 8.0, _tc(COL_HELMET))
+	draw_circle(Vector2(-2, -12 + oy), 6.0, _tc(COL_HELMET_DARK.lerp(COL_HELMET, 0.5)))
+	draw_circle(Vector2(3, -13 + oy), 6.0, _tc(COL_HELMET.lightened(0.08)))
+	draw_rect(Rect2(1, -15 + oy, 10, 4), _tc(COL_HELMET_DARK))  # visor
+	draw_rect(Rect2(7, -14 + oy, 3, 2), _tc(COL_VISOR_GLOW))    # eye glow
+	draw_rect(Rect2(4, -10 + oy, 5, 2), _tc(COL_HELMET_DARK))    # chin guard
+	draw_rect(Rect2(0, -21 + oy, 2, 6), _tc(COL_HELMET.lightened(0.15)))  # crest
 
-	# Arm + sword
-	var shoulder := Vector2(10, -17 + oy)
-	draw_set_transform(shoulder, arm_angle, Vector2.ONE)
-	draw_rect(Rect2(-4, 0, 8, 12), _tc(COL_ARMOR_DARK))
-	draw_rect(Rect2(-3, 11, 7, 10), _tc(COL_ARMOR))
-	draw_rect(Rect2(-2, 19, 5, 4), _tc(COL_SKIN))
-	draw_rect(Rect2(-1.5, 16, 3, 8), _tc(COL_HILT))
-	draw_rect(Rect2(-5, 14, 10, 3), _tc(COL_GUARD))
-	draw_rect(Rect2(-1.5, -16, 3, 30), _tc(COL_BLADE))
-	draw_rect(Rect2(0, -16, 1, 30), _tc(COL_BLADE_EDGE))
-	draw_rect(Rect2(-1, -19, 2, 4), _tc(COL_BLADE_EDGE))
+	# Sword arm + sword
+	var sword_shoulder: Vector2
+	var sword_scale: Vector2
+	var sword_angle: float
+	if flipped:
+		sword_shoulder = Vector2(-6, -4 + oy)
+		sword_angle = -arm_angle
+		sword_scale = Vector2(-1, 1)
+	else:
+		sword_shoulder = Vector2(6, -4 + oy)
+		sword_angle = arm_angle
+		sword_scale = Vector2.ONE
+	draw_set_transform(sword_shoulder, sword_angle, sword_scale)
+	draw_rect(Rect2(-2, 0, 5, 8), _tc(COL_ARMOR_DARK))
+	draw_rect(Rect2(-2, 7, 4, 6), _tc(COL_ARMOR))
+	draw_rect(Rect2(-1, 12, 3, 3), _tc(COL_SKIN))
+	draw_rect(Rect2(-1, 10, 2, 5), _tc(COL_HILT))
+	draw_rect(Rect2(-3, 9, 7, 2), _tc(COL_GUARD))
+	draw_rect(Rect2(-1, -10, 2, 20), _tc(COL_BLADE))
+	draw_rect(Rect2(0, -10, 1, 20), _tc(COL_BLADE_EDGE))
+	draw_rect(Rect2(-0.5, -12, 1, 3), _tc(COL_BLADE_EDGE))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

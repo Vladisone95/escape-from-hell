@@ -5,8 +5,8 @@ signal hit_received(damage: int, knockback_dir: Vector2)
 var i_frames_timer: float = 0.0
 
 func _ready() -> void:
-	collision_layer = 0
-	collision_mask = 0
+	# Keep collision_layer and collision_mask set by the parent script
+	pass
 
 func _physics_process(delta: float) -> void:
 	if i_frames_timer > 0.0:

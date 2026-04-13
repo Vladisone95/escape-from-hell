@@ -41,7 +41,7 @@ const ITEMS: Dictionary = {
 	"slice_and_dice": {
 		"id":          "slice_and_dice",
 		"name":        "Slice and Dice",
-		"description": "Attack 2 times each turn",
+		"description": "Strike twice with each attack",
 		"stackable":   false,
 		"max_stack":   1,
 		"icon_id":     "slice_and_dice",
@@ -135,8 +135,8 @@ func bonus_attack() -> int:
 			total += 10 * slot["count"]
 	return total
 
-## Number of attacks per turn.
-func attacks_per_turn() -> int:
+## Number of strikes per attack press.
+func attacks_per_press() -> int:
 	if has_item("slice_and_dice"):
 		return 2
 	return 1

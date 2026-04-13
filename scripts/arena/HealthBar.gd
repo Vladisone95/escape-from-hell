@@ -2,9 +2,9 @@ extends Node2D
 
 var current_health: int = 100
 var max_health: int = 100
-var bar_width: float = 36.0
-var bar_height: float = 4.0
-var y_offset: float = -50.0
+var bar_width: float = 72.0
+var bar_height: float = 8.0
+var y_offset: float = -100.0
 
 func update_health(cur: int, mx: int) -> void:
 	current_health = cur

@@ -1,7 +1,7 @@
 extends Area2D
 
 var damage: int = 10
-var knockback_force: float = 150.0
+var knockback_force: float = 300.0
 var lifetime: float = 0.15
 var source: Node = null  # who spawned this hitbox
 
@@ -29,7 +29,7 @@ static func create_arc(parent: Node2D, pos: Vector2, facing: Vector2, dmg: int, 
 	hitbox.damage = dmg
 	hitbox.knockback_force = kb
 	hitbox.source = src
-	hitbox.position = pos + facing * 20.0
+	hitbox.position = pos + facing * 40.0
 	hitbox.collision_layer = 0
 	hitbox.collision_mask = 0
 
@@ -42,7 +42,7 @@ static func create_arc(parent: Node2D, pos: Vector2, facing: Vector2, dmg: int, 
 		var offset := Vector2(cos(a), sin(a)) * arc_radius * 0.5
 		var shape := CollisionShape2D.new()
 		var circle := CircleShape2D.new()
-		circle.radius = 14.0
+		circle.radius = 28.0
 		shape.shape = circle
 		shape.position = offset
 		hitbox.add_child(shape)
