@@ -187,6 +187,9 @@ func bonus_dash_cooldown() -> float:
 func bonus_attack_cooldown() -> float:
 	return get_upgrade_stack("attack_speed") * -0.08
 
+func bonus_attack_range() -> float:
+	return 0.0
+
 func bonus_iframes() -> float:
 	if has_upgrade("iframes_up"):
 		return 0.3

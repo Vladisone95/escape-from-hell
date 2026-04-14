@@ -28,6 +28,7 @@ func init(player: CharacterBody2D) -> void:
 	tw.tween_property(self, "modulate", Color(1, 1, 1, 1), 0.4)
 	tw.tween_property(self, "scale", Vector2(2.2, 2.2), 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
 	tw.chain().tween_property(self, "scale", Vector2(2.0, 2.0), 0.15)
+	SoundManager.play("chest_appear")
 
 func _process(_delta: float) -> void:
 	if _opened:

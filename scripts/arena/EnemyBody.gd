@@ -26,6 +26,7 @@ var _state_timer: float = 0.0
 var _cooldown_timer: float = 0.0
 var _knockback_vel: Vector2 = Vector2.ZERO
 var _separation_force: float = 160.0
+var _fixed_position: Vector2 = Vector2.ZERO  # boss anchor
 
 # Hellhound charge
 var _charge_windup: float = 0.0
@@ -50,6 +51,14 @@ var _channel_target: Vector2 = Vector2.ZERO
 var _boss_attack_pattern: int = 0
 var _boss_segments_lost: int = 0
 
+# Pathfinding
+var _astar: AStarGrid2D = null
+var _room_grid: RoomGrid = null
+var _nav_path: PackedVector2Array = PackedVector2Array()
+var _path_idx: int = 0
+var _nav_timer: float = 0.0
+const _NAV_INTERVAL: float = 0.35
+
 func init(et: int, player: CharacterBody2D) -> void:
 	etype = et
 	player_ref = player
@@ -65,12 +74,17 @@ func init(et: int, player: CharacterBody2D) -> void:
 	if stats.has("projectile"):
 		projectile_config = stats["projectile"]
 
+
+func set_nav(astar: AStarGrid2D, grid: RoomGrid) -> void:
+	_astar = astar
+	_room_grid = grid
+
 func _ready() -> void:
 	# Collision
 	var col := CollisionShape2D.new()
 	var shape := CircleShape2D.new()
 	if etype == 5:       # VANITY_BOSS — large collision so player bumps into body
-		shape.radius = 160.0
+		shape.radius = 200.0
 	elif etype == 4:     # ABOMINATION
 		shape.radius = 44.0
 	else:
@@ -78,29 +92,35 @@ func _ready() -> void:
 	col.shape = shape
 	add_child(col)
 	collision_layer = 1 << 2  # layer 3: enemy_body
-	collision_mask = (1 << 0) | (1 << 1) | (1 << 2)  # world + player + other enemies
+	if etype == 5:  # boss: only collide with world walls, not player/enemies (cannot be pushed)
+		collision_mask = 1 << 0
+	else:
+		collision_mask = (1 << 0) | (1 << 1) | (1 << 2)  # world + player + other enemies
 
 	# Sprite
 	sprite = Node2D.new()
 	if etype == 5:  # VANITY_BOSS uses its own sprite
 		sprite.set_script(load("res://scripts/arena/VanityBossSprite.gd"))
-		sprite.scale = Vector2(2, 2)
+		sprite.scale = Vector2(3.75, 3.75)
 	else:
 		sprite.set_script(load("res://scripts/arena/EnemyArenaSprite.gd"))
 		sprite.etype = etype
 		sprite.scale = Vector2(2, 2)
+		sprite.position.y = -16.0  # offset sprite up so collision sits at feet
 	add_child(sprite)
 	sprite.start_idle()
 
 	# Hurtbox
 	hurtbox = Area2D.new()
 	hurtbox.set_script(load("res://scripts/arena/Hurtbox.gd"))
+	if etype != 5:
+		hurtbox.position.y = -16.0  # match sprite offset for non-boss
 	hurtbox.collision_layer = 1 << 2  # layer 3: enemy_body (for player hitbox detection)
 	hurtbox.collision_mask = 1 << 3   # layer 4: player_attack
 	var hb_shape := CollisionShape2D.new()
 	var hb_circle := CircleShape2D.new()
-	if etype == 5:       # VANITY_BOSS — covers body + arms so melee can hit anywhere
-		hb_circle.radius = 320.0
+	if etype == 5:       # VANITY_BOSS — covers entire sprite including arms (BODY_R + arm len) * scale
+		hb_circle.radius = 420.0
 	elif etype == 4:     # ABOMINATION
 		hb_circle.radius = 60.0
 	else:
@@ -113,25 +133,17 @@ func _ready() -> void:
 	# Health bar
 	health_bar_node = Node2D.new()
 	health_bar_node.set_script(load("res://scripts/arena/HealthBar.gd"))
-	health_bar_node.y_offset = -(hb_circle.radius + 12.0)
+	var hbar_extra: float = 16.0 if etype != 5 else 0.0  # account for sprite offset
+	health_bar_node.y_offset = -(240.0 if etype == 5 else hb_circle.radius + 12.0 + hbar_extra)
 	add_child(health_bar_node)
 
-	# Debug stat labels above head
-	var debug_label := RichTextLabel.new()
-	debug_label.name = "DebugStats"
-	debug_label.bbcode_enabled = true
-	debug_label.fit_content = true
-	debug_label.scroll_active = false
-	debug_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-	debug_label.size = Vector2(160, 60)
-	debug_label.position = Vector2(-80, -56)
-	debug_label.add_theme_font_size_override("normal_font_size", 11)
-	debug_label.add_theme_color_override("default_color", Color.WHITE)
-	debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(debug_label)
-
+	if etype == 5:
+		_capture_fixed_position.call_deferred()
 	_state = State.IDLE
 	_state_timer = 0.5  # spawn delay
+
+func _capture_fixed_position() -> void:
+	_fixed_position = global_position
 
 func _physics_process(delta: float) -> void:
 	if _state == State.DEAD:
@@ -141,9 +153,9 @@ func _physics_process(delta: float) -> void:
 
 	_knockback_vel = _knockback_vel.move_toward(Vector2.ZERO, 1000.0 * delta)
 
-	var dl := get_node_or_null("DebugStats") as RichTextLabel
-	if dl:
-		dl.text = "[center][color=green]%d[/color] [color=red]%d[/color][/center]" % [health, attack_damage]
+	# Boss is pinned — restore position after any physics interaction
+	if etype == 5:
+		global_position = _fixed_position
 
 	match _state:
 		State.IDLE:    _process_idle(delta)
@@ -160,12 +172,16 @@ func _process_idle(delta: float) -> void:
 		_change_state(State.CHASE)
 
 func _process_chase(delta: float) -> void:
-	var to_player := player_ref.global_position - global_position
-	var dist := to_player.length()
+	var to_player: Vector2 = player_ref.global_position - global_position
+	var dist: float = to_player.length()
 
+	# Warlocks require line-of-sight to attack; others attack on range
 	if dist < attack_range:
-		_change_state(State.ATTACK)
-		return
+		if etype == 3 and not _has_line_of_sight():
+			pass  # no clear shot — fall through to movement
+		else:
+			_change_state(State.ATTACK)
+			return
 
 	# Stationary boss — just face player, no movement
 	if move_speed <= 0.0:
@@ -174,9 +190,10 @@ func _process_chase(delta: float) -> void:
 		move_and_slide()
 		return
 
-	var dir := to_player.normalized()
+	# Base direction: use pathfinding if available, else direct chase
+	var dir: Vector2 = _get_nav_direction(delta, to_player)
 
-	# Imp erratic movement
+	# Imp erratic movement (applied on top of nav direction)
 	if etype == 1:
 		_erratic_timer -= delta
 		if _erratic_timer <= 0.0:
@@ -185,7 +202,7 @@ func _process_chase(delta: float) -> void:
 		dir = (dir + _erratic_offset).normalized()
 
 	# Hellhound charge
-	var spd := move_speed
+	var spd: float = move_speed
 	if etype == 2:
 		if not _is_charging:
 			_charge_windup += delta
@@ -200,7 +217,7 @@ func _process_chase(delta: float) -> void:
 				_is_charging = false
 
 	# Separation from other enemies
-	var sep := _get_separation()
+	var sep: Vector2 = _get_separation()
 	dir = (dir + sep * 0.5).normalized()
 
 	velocity = dir * spd + _knockback_vel
@@ -315,7 +332,9 @@ func _change_state(new_state: int) -> void:
 		State.ATTACK:
 			sprite._stop_walk()
 			sprite.start_idle()
-			_state_timer = 0.5 if etype == 5 else 0.3  # boss gets longer wind-up
+			_state_timer = 1.2 if etype == 5 else 0.3  # boss gets longer wind-up
+			if etype == 5:
+				sprite.play_attack_wind_up()
 			if etype != 3 and etype != 4 and etype != 5:  # Non-ranged: melee telegraph
 				_attack_dir = (player_ref.global_position - global_position).normalized()
 				_spawn_melee_telegraph()
@@ -357,11 +376,12 @@ func _take_damage(amount: int, knockback_dir: Vector2) -> void:
 	health_bar_node.update_health(health, max_health)
 	health_changed.emit(health, max_health)
 	sprite.play_hurt()
+	SoundManager.play("hurt_e")
 
-	# Boss HP segment check — destroy arm + meteor per 10% lost
+	# Boss HP segment check — destroy arm + meteor at 90%, 80%, ..., 10% HP
 	if etype == 5 and health > 0:
 		var segment_size: float = float(max_health) / 10.0
-		var new_segments_lost: int = clampi(int(ceil(float(max_health - health) / segment_size)), 0, 10)
+		var new_segments_lost: int = clampi(int(float(max_health - health) / segment_size + 0.001), 0, 9)
 		while _boss_segments_lost < new_segments_lost:
 			sprite.destroy_arm(_boss_segments_lost)
 			boss_segment_lost.emit(_boss_segments_lost)
@@ -374,6 +394,7 @@ func _take_damage(amount: int, knockback_dir: Vector2) -> void:
 	if health <= 0:
 		_change_state(State.DEAD)
 		sprite.play_die()
+		SoundManager.play("die_e")
 		await get_tree().create_timer(0.5).timeout
 		enemy_died.emit(self)
 		queue_free()
@@ -388,6 +409,52 @@ func _get_separation() -> Vector2:
 		if dist < 60.0 and dist > 0.01:
 			sep += diff.normalized() * (80.0 - dist) / 80.0
 	return sep
+
+## Returns the movement direction using pathfinding when available.
+## Falls back to direct chase when no nav data exists or path is empty.
+func _get_nav_direction(delta: float, to_player: Vector2) -> Vector2:
+	_nav_timer -= delta
+	if _nav_timer <= 0.0:
+		_recompute_path()
+	if _nav_path.is_empty():
+		return to_player.normalized()
+	# Advance past waypoints we've already reached
+	while _path_idx < _nav_path.size():
+		if global_position.distance_to(_nav_path[_path_idx]) < RoomGrid.CELL_SIZE * 0.75:
+			_path_idx += 1
+		else:
+			break
+	if _path_idx >= _nav_path.size():
+		return to_player.normalized()
+	return (_nav_path[_path_idx] - global_position).normalized()
+
+func _recompute_path() -> void:
+	_nav_timer = _NAV_INTERVAL
+	_nav_path = PackedVector2Array()
+	_path_idx = 0
+	if _astar == null or _room_grid == null or not is_instance_valid(player_ref):
+		return
+	var from_cell: Vector2i = _room_grid.world_to_grid(global_position)
+	var to_cell: Vector2i = _room_grid.world_to_grid(player_ref.global_position)
+	from_cell.x = clampi(from_cell.x, 0, _room_grid.width - 1)
+	from_cell.y = clampi(from_cell.y, 0, _room_grid.height - 1)
+	to_cell.x = clampi(to_cell.x, 0, _room_grid.width - 1)
+	to_cell.y = clampi(to_cell.y, 0, _room_grid.height - 1)
+	var cell_path: PackedVector2Array = _astar.get_id_path(from_cell, to_cell, true)
+	for cell_v2: Vector2 in cell_path:
+		_nav_path.append(_room_grid.grid_to_world(int(cell_v2.x), int(cell_v2.y)))
+	# Skip the first waypoint — it's essentially the enemy's current cell
+	_path_idx = 1 if _nav_path.size() > 1 else 0
+
+## Returns true if there is an unobstructed line between this enemy and the player.
+func _has_line_of_sight() -> bool:
+	if not is_instance_valid(player_ref):
+		return false
+	var space: PhysicsDirectSpaceState2D = get_world_2d().direct_space_state
+	var query: PhysicsRayQueryParameters2D = PhysicsRayQueryParameters2D.create(
+		global_position, player_ref.global_position, 1, [self]
+	)
+	return space.intersect_ray(query).is_empty()
 
 func _clear_telegraph() -> void:
 	if is_instance_valid(_telegraph_node):

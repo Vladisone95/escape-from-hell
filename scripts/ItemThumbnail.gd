@@ -62,4 +62,3 @@ func _draw() -> void:
 		var text := str(stack_count)
 		var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, 13)
 		draw_string(font, badge_pos - Vector2(text_size.x / 2.0, -4.5), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.95, 0.7))
-

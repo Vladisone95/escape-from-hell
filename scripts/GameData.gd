@@ -2,6 +2,7 @@ extends Node
 # AutoLoad — persists between scenes
 
 var current_wave: int    = 1
+var current_act: int     = 1
 var _cursor_default: ImageTexture
 var _cursor_pointer: ImageTexture
 var player_health: int   = 100
@@ -12,6 +13,11 @@ var player_spikes: int   = 0
 var player_regen: int    = 1
 
 # Real-time arena stats
+enum WeaponType { MELEE, RANGED }
+
+var player_weapon_type: int = WeaponType.MELEE
+var player_attack_range: float = 150.0
+
 var player_speed: float         = 280.0
 var player_dash_speed: float    = 1000.0
 var player_dash_duration: float = 0.15
@@ -158,6 +164,7 @@ func _draw_pointer_cursor(img: Image) -> void:
 
 func reset() -> void:
 	current_wave      = 1
+	current_act       = 1
 	player_health     = 100
 	player_max_health = 100
 	player_attack     = 10
@@ -171,6 +178,8 @@ func reset() -> void:
 	player_dash_duration = 0.15
 	player_dash_cooldown = 10.0
 	player_attack_cooldown = 0.5
+	player_weapon_type   = WeaponType.MELEE
+	player_attack_range  = 150.0
 	player_iframes       = 0.5
 
 func is_item_reward_wave() -> bool:
@@ -207,6 +216,10 @@ func effective_dash_cooldown() -> float:
 ## Effective attack cooldown = base + upgrade bonus
 func effective_attack_cooldown() -> float:
 	return player_attack_cooldown + player_upgrades.bonus_attack_cooldown()
+
+## Effective attack range = base + inventory bonus + upgrade bonus
+func effective_attack_range() -> float:
+	return player_attack_range + player_inventory.bonus_attack_range() + player_upgrades.bonus_attack_range()
 
 ## Effective iframes = base + upgrade bonus
 func effective_iframes() -> float:

@@ -3,16 +3,7 @@ extends Node2D
 enum GameState { PRE_WAVE, COMBAT, WAVE_COMPLETE, GAME_OVER, WIN }
 
 const ENEMY_TYPE_NAMES := ["Demon", "Imp", "Hellhound", "Warlock"]
-const ARENA_BASE_SIZE := Vector2(1000, 700)
-const ARENA_GROW_PER_WAVE := Vector2(60, 40)
-const MIN_OBSTACLE_COUNT := 3
-const MAX_OBSTACLE_COUNT := 5
-const OBSTACLE_TYPES: Array[Dictionary] = [
-	{"name": "boulder", "radius": 44.0},
-	{"name": "pillar", "radius": 20.0},
-	{"name": "bone_pile", "radius": 32.0},
-	{"name": "skull_pile", "radius": 28.0},
-]
+const ARENA_SIZE := Vector2(1920, 1280)
 
 var _state: int = GameState.PRE_WAVE
 var _current_grid: RoomGrid
@@ -23,16 +14,16 @@ var _hud_layer: CanvasLayer
 var _arena_container: Node2D  # holds walls, floor, obstacles
 var _enemy_container: Node2D
 var _alive_count: int = 0
-var _arena_size: Vector2 = ARENA_BASE_SIZE
+var _arena_size: Vector2 = ARENA_SIZE
 var _boss_enemy: CharacterBody2D = null  # tracked boss for HUD health bar
 
 # Boss mirror mechanic
 var _boss_mirrors: Array = []
 var _mirror_charge_timer: float = 0.0
-var _mirror_charge_interval: float = 20.0  # seconds between mirror attacks
+var _mirror_charge_interval: float = 15.0  # seconds between mirror attacks
 var _mirror_charging_idx: int = -1  # which mirror is charging (-1 = none)
 var _mirror_charge_progress: float = 0.0
-const MIRROR_CHARGE_DURATION := 4.0  # how long the mirror glows before releasing
+const MIRROR_CHARGE_DURATION := 5.0  # how long the mirror glows before releasing
 
 # Overlays
 var _gameover_overlay: Control
@@ -41,6 +32,14 @@ var _shrine_overlay: ShrineOverlay
 var _inventory_overlay: InventoryOverlay
 var _advance_wave_on_next: bool = false
 var _chest_pickup: Node2D = null
+
+# Wave portal
+var _wave_portal: Area2D = null
+var _nav_astar: AStarGrid2D = null
+
+# Act map overlay (TAB key)
+var _act_map_overlay: ActMap = null
+var _act_map_visible: bool = false
 
 # Wave announcement
 var _wave_announce_label: Label
@@ -61,6 +60,29 @@ func _process(delta: float) -> void:
 	if _state != GameState.COMBAT or _boss_mirrors.is_empty():
 		return
 	_update_boss_mirror_mechanic(delta)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if _state != GameState.COMBAT and _state != GameState.WAVE_COMPLETE:
+		return
+	if event.is_action_pressed("toggle_map"):
+		if _act_map_visible:
+			_hide_act_map_overlay()
+		else:
+			_show_act_map_overlay()
+		get_viewport().set_input_as_handled()
+
+func _show_act_map_overlay() -> void:
+	_act_map_visible = true
+	_act_map_overlay.visible = true
+	Engine.time_scale = 0.0
+	_player.set_process_unhandled_input(false)
+
+func _hide_act_map_overlay() -> void:
+	_act_map_visible = false
+	_act_map_overlay.visible = false
+	Engine.time_scale = 1.0
+	if _state == GameState.COMBAT:
+		_player.set_process_unhandled_input(true)
 
 func _update_boss_mirror_mechanic(delta: float) -> void:
 	if _mirror_charging_idx >= 0:
@@ -108,118 +130,32 @@ func _generate_arena(wave: int) -> void:
 	for c in _arena_container.get_children():
 		c.queue_free()
 
-	# Check for boss wave — enlarge arena
 	var is_boss: bool = EnemyStats.get_encounter(wave) == EnemyStats.Encounter.BOSS
-	if is_boss:
-		_arena_size = ARENA_BASE_SIZE * 2
-	else:
-		_arena_size = ARENA_BASE_SIZE + ARENA_GROW_PER_WAVE * (wave - 1)
+	_arena_size = ARENA_SIZE
 
-	# Generate room grid
+	# Generate room grid (fixed size, changes shape per wave)
 	var seed_val: int = wave * 73856093 + 12345
 	_current_grid = RoomGrid.new()
-	_current_grid.generate(_arena_size, seed_val, is_boss)
+	_current_grid.generate(seed_val, is_boss)
 
-	# Lava layer (bottom — drawn behind everything)
-	var lava_node: Node2D = Node2D.new()
-	lava_node.set_script(load("res://scripts/arena/LavaLayer.gd"))
-	_arena_container.add_child(lava_node)
-	lava_node.init(_current_grid)
+	# Floor + lava tilemap
+	var floor_layer: TileMapLayer = TileMapLayer.new()
+	floor_layer.set_script(load("res://scripts/arena/ArenaFloorTileMap.gd"))
+	var TileSetBuilder: GDScript = load("res://scripts/arena/ArenaTileSet.gd")
+	floor_layer.tile_set = TileSetBuilder.create()
+	floor_layer.position = _current_grid.get_origin()
+	_arena_container.add_child(floor_layer)
+	floor_layer.populate(_current_grid)
 
-	# Floor (on top of lava)
-	var floor_node: Node2D = Node2D.new()
-	floor_node.set_script(load("res://scripts/arena/ArenaFloor.gd"))
-	_arena_container.add_child(floor_node)
-	floor_node.init(_current_grid)
+	# Lava bubble animations
+	var bubble_node: Node2D = Node2D.new()
+	bubble_node.set_script(load("res://scripts/arena/LavaBubbleEffect.gd"))
+	_arena_container.add_child(bubble_node)
+	bubble_node.init(_current_grid, seed_val)
 
-	# Decorations
-	var decor_node: Node2D = Node2D.new()
-	decor_node.set_script(load("res://scripts/arena/ArenaDecorations.gd"))
-	_arena_container.add_child(decor_node)
-	decor_node.init(_current_grid, seed_val)
-
-	# Lava particles
-	var particles_node: Node2D = Node2D.new()
-	particles_node.set_script(load("res://scripts/arena/LavaParticles.gd"))
-	_arena_container.add_child(particles_node)
-	particles_node.init(_current_grid, seed_val)
-
-	# Collision walls from grid boundaries
-	_generate_grid_collisions()
-
-	# Random obstacles (skip for boss waves)
-	if is_boss:
-		return
-	_generate_obstacles(seed_val)
-
-func _generate_grid_collisions() -> void:
-	var boundary_cells: Array[Vector2i] = _current_grid.get_lava_boundary_cells()
-	var ts: float = RoomGrid.CELL_SIZE
-	for cell: Vector2i in boundary_cells:
-		var world_pos: Vector2 = _current_grid.grid_to_world(cell.x, cell.y)
-		var wall: StaticBody2D = StaticBody2D.new()
-		wall.position = world_pos
-		wall.collision_layer = 1 << 0
-		wall.collision_mask = 0
-		var col: CollisionShape2D = CollisionShape2D.new()
-		var rect: RectangleShape2D = RectangleShape2D.new()
-		rect.size = Vector2(ts, ts)
-		col.shape = rect
-		wall.add_child(col)
-		_arena_container.add_child(wall)
-
-func _generate_obstacles(seed_val: int) -> void:
-	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
-	rng.seed = seed_val + 7777
-	var floor_cells: Array[Vector2i] = _current_grid.get_floor_positions()
-	var center_x: int = _current_grid.width / 2
-	var center_y: int = _current_grid.height / 2
-	var obstacle_count: int = rng.randi_range(MIN_OBSTACLE_COUNT, MAX_OBSTACLE_COUNT)
-	var placed: Array[Vector2] = []
-
-	for i: int in obstacle_count:
-		# Try to find a valid placement
-		for attempt: int in 20:
-			var cell: Vector2i = floor_cells[rng.randi_range(0, floor_cells.size() - 1)]
-			# Not too close to center
-			if absi(cell.x - center_x) < 5 and absi(cell.y - center_y) < 5:
-				continue
-			# Must be on interior floor (not edge)
-			if not _current_grid.is_floor(cell.x - 1, cell.y) or not _current_grid.is_floor(cell.x + 1, cell.y):
-				continue
-			if not _current_grid.is_floor(cell.x, cell.y - 1) or not _current_grid.is_floor(cell.x, cell.y + 1):
-				continue
-			var pos: Vector2 = _current_grid.grid_to_world(cell.x, cell.y)
-			# Not too close to other obstacles
-			var too_close: bool = false
-			for p: Vector2 in placed:
-				if pos.distance_to(p) < 100.0:
-					too_close = true
-					break
-			if too_close:
-				continue
-			var otype: Dictionary = OBSTACLE_TYPES[rng.randi_range(0, OBSTACLE_TYPES.size() - 1)]
-			_add_obstacle(pos, otype["name"], otype["radius"])
-			placed.append(pos)
-			break
-
-func _add_obstacle(pos: Vector2, type_name: String, radius: float) -> void:
-	var obs: StaticBody2D = StaticBody2D.new()
-	obs.position = pos
-	obs.collision_layer = 1 << 0
-	obs.collision_mask = 0
-	var col: CollisionShape2D = CollisionShape2D.new()
-	var shape: CircleShape2D = CircleShape2D.new()
-	shape.radius = radius
-	col.shape = shape
-	obs.add_child(col)
-
-	var vis: Node2D = Node2D.new()
-	vis.set_script(load("res://scripts/arena/ObstacleVisual.gd"))
-	vis.obstacle_type = type_name
-	obs.add_child(vis)
-
-	_arena_container.add_child(obs)
+	# Build navigation grid for enemy pathfinding
+	var no_obstacles: Array[Vector2] = []
+	_nav_astar = _current_grid.build_astar(no_obstacles)
 
 func _spawn_mirrors() -> void:
 	var is_boss_m: bool = EnemyStats.get_encounter(GameData.current_wave) == EnemyStats.Encounter.BOSS
@@ -235,8 +171,8 @@ func _spawn_mirrors() -> void:
 	var pair_color := Color(0.9, 0.15, 0.1)  # red glow for boss mirrors
 	_arena_container.add_child(mirror_a)
 	_arena_container.add_child(mirror_b)
-	mirror_a.init(_player, pair_color, mirror_b, 999.0)  # no teleporting — boss mechanic only
-	mirror_b.init(_player, pair_color, mirror_a, 999.0)
+	mirror_a.init(_player, pair_color, mirror_b, 15.0)
+	mirror_b.init(_player, pair_color, mirror_a, 15.0)
 	# Store references for boss mirror mechanic
 	_boss_mirrors = [mirror_a, mirror_b]
 
@@ -246,7 +182,7 @@ func _spawn_shrines() -> void:
 		return
 	var shrine := Node2D.new()
 	shrine.set_script(load("res://scripts/arena/SacrificialShrine.gd"))
-	shrine.position = Vector2(0, -250)
+	shrine.position = Vector2(0, -500)
 	_arena_container.add_child(shrine)
 	shrine.init(_player)
 	shrine.shrine_used.connect(_on_shrine_used)
@@ -271,8 +207,8 @@ func _setup_camera() -> void:
 	_update_camera_limits()
 
 func _update_camera_limits() -> void:
-	var hw: float = _arena_size.x * 0.5 + 96
-	var hh: float = _arena_size.y * 0.5 + 96
+	var hw: float = RoomGrid.GRID_W * RoomGrid.CELL_SIZE * 0.5
+	var hh: float = RoomGrid.GRID_H * RoomGrid.CELL_SIZE * 0.5
 	_camera.limit_left = int(-hw)
 	_camera.limit_right = int(hw)
 	_camera.limit_top = int(-hh)
@@ -326,6 +262,14 @@ func _build_overlays() -> void:
 	_wave_announce_label.visible = false
 	_hud_layer.add_child(_wave_announce_label)
 
+	# Act map overlay (TAB key, read-only mid-combat)
+	_act_map_overlay = ActMap.new()
+	_act_map_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_act_map_overlay.read_only = true
+	_act_map_overlay.visible = false
+	_act_map_overlay.close_requested.connect(_hide_act_map_overlay)
+	_hud_layer.add_child(_act_map_overlay)
+
 func _build_gameover_overlay() -> Control:
 	var overlay := ColorRect.new()
 	overlay.color = Color(0.0, 0.0, 0.0, 0.92)
@@ -366,11 +310,13 @@ func _build_gameover_overlay() -> Control:
 # WAVE FLOW
 # ═══════════════════════════════════════════════════════════════════
 func _show_inventory_screen(advance_wave: bool = false) -> void:
+	MusicManager.play_track(MusicManager.Track.INVENTORY)
 	_advance_wave_on_next = advance_wave
 	_state = GameState.PRE_WAVE
 	_player.set_physics_process(false)
 	_player.set_process_unhandled_input(false)
 	_inventory_overlay.refresh()
+	_inventory_overlay.set_advance_context(advance_wave)
 	_inventory_overlay.visible = true
 	_hud.visible = false
 
@@ -382,6 +328,11 @@ func _on_inventory_next_stage() -> void:
 
 func _start_combat() -> void:
 	_state = GameState.COMBAT
+
+	# Clean up any lingering portal
+	if is_instance_valid(_wave_portal):
+		_wave_portal.queue_free()
+		_wave_portal = null
 
 	# Reset boss mirror state
 	_boss_mirrors = []
@@ -419,8 +370,11 @@ func _start_combat() -> void:
 	# Spawn enemies
 	_spawn_wave_enemies()
 
-	# Music
-	MusicManager.play_track(MusicManager.Track.COMBAT)
+	# Music — boss wave gets its own track
+	if _boss_enemy != null:
+		MusicManager.play_track(MusicManager.Track.BOSS)
+	else:
+		MusicManager.play_track(MusicManager.Track.COMBAT)
 
 	# Wave announcement
 	_show_wave_announcement()
@@ -432,9 +386,9 @@ func _spawn_wave_enemies() -> void:
 	var is_boss_encounter: bool = EnemyStats.get_encounter(GameData.current_wave) == EnemyStats.Encounter.BOSS
 	var edge_floors: Array[Vector2i] = []
 	if _current_grid != null:
-		edge_floors = _current_grid.get_edge_floor_positions(3)
-	var hw: float = _arena_size.x * 0.5 - 100
-	var hh: float = _arena_size.y * 0.5 - 100
+		edge_floors = _current_grid.get_edge_floor_positions(3, true)
+	var hw: float = _arena_size.x * 0.5 - 200
+	var hh: float = _arena_size.y * 0.5 - 200
 
 	for group in wave_def:
 		var et: int = EnemyStats.type_id(group["type"])
@@ -461,6 +415,7 @@ func _spawn_wave_enemies() -> void:
 
 			enemy.position = pos
 			enemy.init(et, _player)
+			enemy.set_nav(_nav_astar, _current_grid)
 			_enemy_container.add_child(enemy)
 			enemy.add_to_group("enemies")
 			enemy.enemy_died.connect(_on_enemy_died)
@@ -492,6 +447,7 @@ func _wave_complete() -> void:
 	_boss_enemy = null
 	_hud.hide_boss_bar()
 	MusicManager.play_track(MusicManager.Track.IDLE)
+	SoundManager.play("wave_done")
 	_hud.log_msg("[center][color=yellow][b]Wave %d Complete![/b][/color][/center]" % GameData.current_wave)
 
 	await get_tree().create_timer(0.9).timeout
@@ -509,10 +465,10 @@ func _wave_complete() -> void:
 		_hud.update_hp(GameData.player_health, GameData.effective_max_health())
 		_hud.log_msg("[color=green]+%d HP (regen)[/color]" % healed)
 
+	_hud.log_msg("[center][color=#c89aff]Find the portal to advance![/color][/center]")
+	_spawn_wave_portal()
 	if GameData.is_item_reward_wave():
 		_spawn_chest_pickup()
-	else:
-		_show_inventory_screen(true)
 
 func _spawn_chest_pickup() -> void:
 	_chest_pickup = Node2D.new()
@@ -528,6 +484,44 @@ func _on_chest_pickup_opened() -> void:
 	_player.set_physics_process(false)
 	_player.set_process_unhandled_input(false)
 	_chest_overlay.show_chest()
+
+func _spawn_wave_portal() -> void:
+	if is_instance_valid(_wave_portal):
+		_wave_portal.queue_free()
+		_wave_portal = null
+	var WavePortalScript: GDScript = load("res://scripts/arena/WavePortal.gd")
+	_wave_portal = Area2D.new()
+	_wave_portal.set_script(WavePortalScript)
+	_arena_container.add_child(_wave_portal)
+	_wave_portal.global_position = _find_portal_placement()
+	_wave_portal.init(_player)
+	_wave_portal.portal_entered.connect(_on_portal_entered)
+
+func _find_portal_placement() -> Vector2:
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.randomize()
+	var floor_cells: Array[Vector2i] = _current_grid.get_floor_positions()
+	var center_x: int = _current_grid.width / 2
+	var center_y: int = _current_grid.height / 2
+	for _attempt: int in 30:
+		var cell: Vector2i = floor_cells[rng.randi_range(0, floor_cells.size() - 1)]
+		if absi(cell.x - center_x) < 6 and absi(cell.y - center_y) < 6:
+			continue
+		if not _current_grid.is_floor(cell.x - 2, cell.y) or not _current_grid.is_floor(cell.x + 2, cell.y):
+			continue
+		if not _current_grid.is_floor(cell.x, cell.y - 2) or not _current_grid.is_floor(cell.x, cell.y + 2):
+			continue
+		var pos: Vector2 = _current_grid.grid_to_world(cell.x, cell.y)
+		if pos.distance_to(Vector2.ZERO) < 360.0:
+			continue
+		return pos
+	return Vector2(_arena_size.x * 0.3, -_arena_size.y * 0.3)
+
+func _on_portal_entered() -> void:
+	if is_instance_valid(_wave_portal):
+		_wave_portal.queue_free()
+		_wave_portal = null
+	_show_inventory_screen(true)
 
 func _on_shrine_used() -> void:
 	_player.set_physics_process(false)
@@ -555,7 +549,9 @@ func _on_chest_item_looted(item_id: String) -> void:
 		_hud.log_msg("[center][color=orange]+ %s![/color][/center]" % def.get("name", item_id))
 	else:
 		_hud.log_msg("[center][color=gray]%s is full![/color][/center]" % def.get("name", item_id))
-	_show_inventory_screen(true)
+	# Re-enable player — portal is already in the arena, player walks to it
+	_player.set_physics_process(true)
+	_player.set_process_unhandled_input(true)
 
 func _on_player_died() -> void:
 	_state = GameState.GAME_OVER
@@ -575,20 +571,15 @@ func _on_boss_segment_lost(_order_index: int) -> void:
 		return
 	var MeteorScript: GDScript = load("res://scripts/arena/MeteorStrike.gd")
 	MeteorScript.fire(_arena_container, _player.global_position)
+	_hud.flash_boss_segment(_order_index)
 	_hud.log_msg("[center][color=red]A hand shatters! The sky trembles![/color][/center]")
 
 # ═══════════════════════════════════════════════════════════════════
 # POLISH
 # ═══════════════════════════════════════════════════════════════════
 func _show_wave_announcement() -> void:
-	var is_boss_w: bool = EnemyStats.get_encounter(GameData.current_wave) == EnemyStats.Encounter.BOSS
-	if is_boss_w:
-		var boss_name: String = EnemyStats.get_boss_name(GameData.current_wave)
-		_wave_announce_label.text = boss_name if boss_name != "" else "BOSS"
-		_wave_announce_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))
-	else:
-		_wave_announce_label.text = "WAVE %d" % GameData.current_wave
-		_wave_announce_label.remove_theme_color_override("font_color")
+	SoundManager.play("wave_start")
+	_wave_announce_label.text = "WAVE %d" % GameData.current_wave
 	_wave_announce_label.visible = true
 	_wave_announce_label.modulate = Color(1, 1, 1, 0)
 	var tw := create_tween()

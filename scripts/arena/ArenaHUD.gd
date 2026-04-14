@@ -1,9 +1,6 @@
 extends Control
 
-var hp_bar: ProgressBar
-var hp_label: Label
 var wave_label: Label
-var stat_labels: Dictionary = {}
 var log_display: RichTextLabel
 var _log_lines: Array[String] = []
 
@@ -22,6 +19,8 @@ var _boss_max_hp: int = 1
 var _dash_cooldown_remaining: float = 0.0
 var _dash_cooldown_total: float = 10.0
 var _player_ref: WeakRef = WeakRef.new()
+var _segment_flash: float = 0.0
+var _flash_frac: float = 0.0
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -36,49 +35,15 @@ func _process(_delta: float) -> void:
 		_dash_cooldown_total = player.get_dash_cooldown_total()
 	if _ring_widget:
 		_ring_widget.queue_redraw()
+	if _segment_flash > 0.0:
+		_segment_flash = maxf(0.0, _segment_flash - _delta * 2.2)
+		if _boss_bar:
+			_boss_bar.queue_redraw()
 
 func set_player(player: CharacterBody2D) -> void:
 	_player_ref = weakref(player)
 
 func _build_ui() -> void:
-	# HP Bar (top-left)
-	var hp_container := VBoxContainer.new()
-	hp_container.position = Vector2(16, 12)
-	hp_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(hp_container)
-
-	var hp_title := Label.new()
-	hp_title.text = "HP"
-	hp_title.add_theme_font_size_override("font_size", 14)
-	hp_title.add_theme_color_override("font_color", Color(0.9, 0.3, 0.2))
-	hp_container.add_child(hp_title)
-
-	hp_bar = ProgressBar.new()
-	hp_bar.custom_minimum_size = Vector2(200, 18)
-	hp_bar.max_value = 100
-	hp_bar.value = 100
-	hp_bar.show_percentage = false
-	hp_container.add_child(hp_bar)
-
-	hp_label = Label.new()
-	hp_label.text = "100 / 100"
-	hp_label.add_theme_font_size_override("font_size", 13)
-	hp_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
-	hp_container.add_child(hp_label)
-
-	# Stats (below HP)
-	var stat_box := VBoxContainer.new()
-	stat_box.position = Vector2(16, 80)
-	stat_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(stat_box)
-
-	for stat_name in ["ATK", "DEF", "SPK", "REG"]:
-		var l := Label.new()
-		l.add_theme_font_size_override("font_size", 13)
-		l.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-		stat_box.add_child(l)
-		stat_labels[stat_name] = l
-
 	# Wave counter (top-center)
 	wave_label = Label.new()
 	wave_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
@@ -271,9 +236,6 @@ func _draw_wind_gust(widget: Control, pos: Vector2, color: Color) -> void:
 		widget.draw_polyline(pts, color, 1.5)
 
 func update_hp(current: int, mx: int) -> void:
-	hp_bar.max_value = mx
-	hp_bar.value = current
-	hp_label.text = "%d / %d" % [current, mx]
 	_current_hp = current
 	_max_hp = mx
 
@@ -281,14 +243,7 @@ func update_wave(wave: int) -> void:
 	wave_label.text = "WAVE %d / %d" % [wave, GameData.TOTAL_WAVES]
 
 func update_stats() -> void:
-	stat_labels["ATK"].text = "ATK: %d" % GameData.effective_attack()
-	stat_labels["DEF"].text = "DEF: %d" % GameData.effective_armor()
-	if GameData.player_spikes > 0:
-		stat_labels["SPK"].text = "SPK: %d" % GameData.player_spikes
-		stat_labels["SPK"].visible = true
-	else:
-		stat_labels["SPK"].visible = false
-	stat_labels["REG"].text = "REG: %d" % GameData.effective_regen()
+	pass
 
 func log_msg(text: String) -> void:
 	_log_lines.append(text)
@@ -322,6 +277,12 @@ func update_boss_bar(current: int, mx: int) -> void:
 func hide_boss_bar() -> void:
 	_boss_panel.visible = false
 
+func flash_boss_segment(order_index: int) -> void:
+	_flash_frac = float(9 - order_index) / 10.0
+	_segment_flash = 1.0
+	if _boss_bar:
+		_boss_bar.queue_redraw()
+
 func _draw_boss_bar() -> void:
 	var w: Control = _boss_bar
 	var bar_size: Vector2 = w.size
@@ -348,8 +309,21 @@ func _draw_boss_bar() -> void:
 	if fill_width > 2.0:
 		w.draw_line(Vector2(1, 2), Vector2(fill_width - 1, 2), Color(1.0, 0.6, 0.3, 0.4), 2.0)
 
-	# Segment dividers every 10%
+	# Segment dividers every 10% — prominently marked
 	for i in range(1, 10):
 		var x: float = bar_size.x * (float(i) / 10.0)
-		w.draw_line(Vector2(x, 0), Vector2(x, bar_size.y), Color(0.0, 0.0, 0.0, 0.9), 3.0)
-		w.draw_line(Vector2(x - 1.5, 1), Vector2(x - 1.5, bar_size.y - 1), Color(1.0, 0.5, 0.2, 0.3), 1.0)
+		w.draw_line(Vector2(x, 0), Vector2(x, bar_size.y), Color(0.0, 0.0, 0.0, 0.95), 3.5)
+		w.draw_line(Vector2(x - 1.5, 0), Vector2(x - 1.5, bar_size.y), Color(1.0, 0.55, 0.1, 0.55), 1.5)
+		w.draw_line(Vector2(x + 1.0, 1), Vector2(x + 1.0, bar_size.y - 1), Color(1.0, 0.3, 0.05, 0.2), 1.0)
+		# Small tick mark above the bar to make thresholds obvious
+		w.draw_line(Vector2(x, -5), Vector2(x, 0), Color(1.0, 0.55, 0.15, 0.8), 2.0)
+
+	# Flash effect when a segment threshold is triggered
+	if _segment_flash > 0.0:
+		var fx: float = bar_size.x * _flash_frac
+		var alpha: float = _segment_flash
+		w.draw_line(Vector2(fx, 0), Vector2(fx, bar_size.y), Color(1.0, 0.9, 0.2, alpha * 0.95), 5.0)
+		w.draw_line(Vector2(fx - 3, 0), Vector2(fx - 3, bar_size.y), Color(1.0, 0.6, 0.1, alpha * 0.5), 2.0)
+		w.draw_line(Vector2(fx + 3, 0), Vector2(fx + 3, bar_size.y), Color(1.0, 0.6, 0.1, alpha * 0.5), 2.0)
+		# Tick glow
+		w.draw_line(Vector2(fx, -8), Vector2(fx, 0), Color(1.0, 0.9, 0.2, alpha), 3.0)

@@ -2,13 +2,15 @@ extends Area2D
 
 var damage: int = 10
 var direction: Vector2 = Vector2.RIGHT
-var speed: float = 560.0
+var speed: float = 370.0
 var max_distance: float = 1000.0
 var radius: float = 16.0
 var color_core: Color = Color(1.0, 0.45, 0.05, 0.85)
 var color_inner: Color = Color(1.0, 0.7, 0.1, 0.95)
 var color_center: Color = Color(1.0, 0.95, 0.7)
 var color_glow: Color = Color(1.0, 0.3, 0.0, 0.5)
+var override_layer: int = -1
+var override_mask: int = -1
 var _distance_traveled: float = 0.0
 var _anim: AnimatedSprite2D
 
@@ -16,6 +18,10 @@ func _ready() -> void:
 	z_index = 10
 	collision_layer = 1 << 4  # layer 5: enemy_attack
 	collision_mask = (1 << 1) | (1 << 0)  # layer 2: player_body + layer 1: world
+	if override_layer >= 0:
+		collision_layer = override_layer
+	if override_mask >= 0:
+		collision_mask = override_mask
 
 	var shape := CollisionShape2D.new()
 	var circle := CircleShape2D.new()
@@ -44,6 +50,7 @@ func _physics_process(delta: float) -> void:
 func _on_area_entered(area: Area2D) -> void:
 	if area.has_method("receive_hit"):
 		area.receive_hit(damage, direction * 240.0)
+		SoundManager.play("proj_hit")
 		_spawn_impact()
 		queue_free()
 

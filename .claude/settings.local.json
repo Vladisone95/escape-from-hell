@@ -78,11 +78,20 @@
       "Bash(/mnt/c/Users/vladt/Downloads/Godot_v4.6.2-stable_win64.exe/Godot_v4.6.2-stable_win64_console.exe --headless --path /root/home-projects/escape-from-hell --quit-after 5 --verbose)",
       "Bash(/mnt/c/Users/vladt/Downloads/Godot_v4.6.2-stable_win64.exe/Godot_v4.6.2-stable_win64_console.exe --headless --path /root/home-projects/escape-from-hell -s res://addons/gdUnit4/bin/GdUnitCmdTool.gd --run-tests)",
       "Bash(/mnt/c/Users/vladt/Downloads/Godot_v4.6.2-stable_win64.exe/Godot_v4.6.2-stable_win64_console.exe --headless --path /root/home-projects/escape-from-hell -s res://addons/gdUnit4/bin/GdUnitCmdTool.gd -a res://test/)",
-      "Bash(/mnt/c/Users/vladt/Downloads/Godot_v4.6.2-stable_win64.exe/Godot_v4.6.2-stable_win64_console.exe --headless --path /root/home-projects/escape-from-hell -s res://addons/gdUnit4/bin/GdUnitCmdTool.gd -a res://test/ --ignoreHeadlessMode)"
+      "Bash(/mnt/c/Users/vladt/Downloads/Godot_v4.6.2-stable_win64.exe/Godot_v4.6.2-stable_win64_console.exe --headless --path /root/home-projects/escape-from-hell -s res://addons/gdUnit4/bin/GdUnitCmdTool.gd -a res://test/ --ignoreHeadlessMode)",
+      "Bash(uvx --version)",
+      "Bash(gh release:*)",
+      "Read(//proc/**)",
+      "Read(//c/Program Files \\(x86\\)/Steam/steamapps/common/Aseprite/**)",
+      "Read(//c/Program Files/Steam/steamapps/common/**)",
+      "Read(//c/Program Files \\(x86\\)/Steam/**)",
+      "Bash(mkdir -p ~/bin)",
+      "Bash(tar -xzf /tmp/pixel-mcp_0.5.0_Windows_x86_64.tar.gz -C ~/bin/)",
+      "Read(//c/Users/Vladi/**)",
+      "Bash(echo 'export PATH=\"$HOME/bin:$PATH\"')"
     ]
   },
   "enabledMcpjsonServers": [
-    "godot-mcp",
-    "godot-mcp-editor"
+    "godot-mcp"
   ]
 }

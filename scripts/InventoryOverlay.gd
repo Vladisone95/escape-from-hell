@@ -22,6 +22,9 @@ var _stat_atk: Label
 var _stat_def: Label
 var _stat_spk: Label
 var _stat_reg: Label
+var _stat_rng: Label
+var _act_map: ActMap
+var _advance_wave_ctx: bool = false
 
 func _ready() -> void:
 	_build_ui()
@@ -30,11 +33,11 @@ func _ready() -> void:
 func _build_ui() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	# Dark overlay background
-	var bg := ColorRect.new()
-	bg.color = Color(0.03, 0.01, 0.04, 1.0)
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	# Stone wall background art
+	var stone_bg := _StoneBackground.new()
+	stone_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stone_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(stone_bg)
 
 	# Main horizontal split
 	var hbox := HBoxContainer.new()
@@ -103,6 +106,9 @@ func _build_ui() -> void:
 
 	_stat_reg = _make_stat_label("REG", Color(0.3, 0.9, 0.5), "Regen", "Heals this amount of HP after your turn each round.")
 	stats_box.add_child(_stat_reg)
+
+	_stat_rng = _make_stat_label("RNG", Color(0.3, 0.7, 1.0), "Range", "Auto-attack reach. Enemies within this distance are targeted.")
+	stats_box.add_child(_stat_rng)
 
 	# ── Divider ─────────────────────────────────────────────────────────
 	var divider := ColorRect.new()
@@ -178,11 +184,20 @@ func _build_ui() -> void:
 	add_child(btn_bar)
 
 	var btn := Button.new()
-	btn.text = "NEXT STAGE"
+	btn.text = "VIEW MAP"
 	btn.custom_minimum_size = Vector2(280, 58)
 	btn.add_theme_font_size_override("font_size", 26)
-	btn.pressed.connect(func(): next_stage_pressed.emit())
+	btn.pressed.connect(_show_act_map)
 	btn_bar.add_child(btn)
+
+	# Act map sub-panel — layered on top of entire overlay
+	_act_map = ActMap.new()
+	_act_map.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_act_map.read_only = false
+	_act_map.visible = false
+	_act_map.wave_selected.connect(_on_act_map_wave_selected)
+	_act_map.close_requested.connect(_hide_act_map)
+	add_child(_act_map)
 
 	# ── Tooltip (floating, hidden by default) ───────────────────────────
 	_tooltip = PanelContainer.new()
@@ -263,6 +278,7 @@ func refresh() -> void:
 	_stat_def.text = "Armor:  %d" % GameData.effective_armor()
 	_stat_spk.text = "Spikes:  %d" % GameData.player_spikes
 	_stat_reg.text = "Regen:  %d" % GameData.effective_regen()
+	_stat_rng.text = "Range:  %d" % int(GameData.effective_attack_range())
 
 	# Populate upgrade grid
 	for child in _upgrade_grid.get_children():
@@ -301,3 +317,149 @@ func _on_upgrade_hovered(upgrade_def: Dictionary, gpos: Vector2) -> void:
 
 func _on_upgrade_unhovered() -> void:
 	_tooltip.visible = false
+
+func set_advance_context(advance: bool) -> void:
+	_advance_wave_ctx = advance
+
+func _show_act_map() -> void:
+	# Compute selectable wave at click-time using the freshest context
+	var sel: int = GameData.current_wave + 1 if _advance_wave_ctx else GameData.current_wave
+	_act_map.selectable_wave = sel
+	_act_map.visible = true
+
+func _hide_act_map() -> void:
+	_act_map.visible = false
+
+func _on_act_map_wave_selected(_wave_num: int) -> void:
+	_hide_act_map()
+	next_stage_pressed.emit()
+
+
+# ── Stone wall background art ─────────────────────────────────────────────────
+class _StoneBackground extends Control:
+	var _time: float = 0.0
+	var _particles: Array = []
+	var _stone_noise: Array = []
+	var _cracks: Array[PackedVector2Array] = []
+
+	func _ready() -> void:
+		# Precompute per-cell noise using a deterministic formula
+		for row in 8:
+			for col in 13:
+				var n: float = fmod(absf(sin(float(row * 31 + col * 17)) * 4371.5), 1.0)
+				_stone_noise.append(n)
+
+		# Precompute crack paths with fixed seed
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 42
+		for ci in 8:
+			var path := PackedVector2Array()
+			var x := float(ci * 210 + 120)
+			var y := float(rng.randi_range(40, 180))
+			path.append(Vector2(x, y))
+			for _j in 4:
+				x += rng.randf_range(-55.0, 75.0)
+				y += rng.randf_range(55.0, 160.0)
+				path.append(Vector2(x, y))
+			_cracks.append(path)
+
+		# Init floating rune particles
+		for _i in 15:
+			_particles.append(_new_rune(true))
+
+	func _new_rune(scatter: bool) -> Dictionary:
+		var x   := randf_range(80.0, 1840.0)
+		var ml  := randf_range(4.0, 9.0)
+		var y   := randf_range(80.0, 900.0) if scatter else 1050.0
+		return {
+			"pos":      Vector2(x, y),
+			"vel":      Vector2(randf_range(-5.0, 5.0), randf_range(-18.0, -8.0)),
+			"life":     randf_range(0.0, ml) if scatter else ml,
+			"max_life": ml,
+			"sym":      randi() % 4,
+		}
+
+	func _process(delta: float) -> void:
+		_time += delta
+		for i in _particles.size():
+			var p: Dictionary = _particles[i]
+			p["life"] -= delta
+			if p["life"] <= 0.0:
+				_particles[i] = _new_rune(false)
+				continue
+			p["pos"] += p["vel"] * delta
+			_particles[i] = p
+		queue_redraw()
+
+	func _draw() -> void:
+		var sw := size.x
+		var sh := size.y
+
+		# 1. Base dark fill
+		draw_rect(Rect2(0.0, 0.0, sw, sh), Color(0.025, 0.008, 0.035, 1.0))
+
+		# 2. Stone block grid (13×8)
+		var cols := 13
+		var rows := 8
+		var cw   := sw / cols
+		var ch   := sh / rows
+		for row in rows:
+			for col in cols:
+				var idx := row * cols + col
+				var n: float = _stone_noise[idx] if idx < _stone_noise.size() else 0.5
+				var bcol := Color(0.042 + n * 0.022, 0.012 + n * 0.006, 0.038 + n * 0.014)
+				draw_rect(Rect2(col * cw + 2.0, row * ch + 2.0, cw - 4.0, ch - 4.0), bcol)
+			# Horizontal grout line
+			draw_rect(Rect2(0.0, row * ch, sw, 2.0), Color(0.010, 0.004, 0.018, 1.0))
+		# Vertical grout lines
+		for col in cols:
+			draw_rect(Rect2(col * cw, 0.0, 2.0, sh), Color(0.010, 0.004, 0.018, 1.0))
+
+		# 3. Glowing cracks
+		for crack in _cracks:
+			var pulse: float = 0.14 + sin(_time * 1.7 + crack[0].x * 0.004) * 0.07
+			draw_polyline(crack, Color(0.75, 0.22, 0.0, pulse), 2.5)
+			draw_polyline(crack, Color(1.0, 0.52, 0.10, pulse * 0.45), 1.0)
+
+		# 4. Bottom ember glow
+		for gi in 8:
+			var gy: float = sh - float(gi) * 32.0
+			var ga: float = maxf(0.28 - gi * 0.034, 0.0)
+			draw_rect(Rect2(0.0, gy, sw, 36.0), Color(0.55, 0.08, 0.0, ga))
+
+		# 5. Corner rune marks
+		var corners := [
+			Vector2(55.0, 55.0), Vector2(sw - 55.0, 55.0),
+			Vector2(55.0, sh - 55.0), Vector2(sw - 55.0, sh - 55.0),
+		]
+		for cn in corners:
+			var pulse: float = 0.55 + sin(_time * 1.3 + cn.x * 0.001) * 0.12
+			var rcol := Color(0.65, 0.40, 0.10, pulse)
+			draw_arc(cn, 28.0, 0.0, TAU, 16, rcol, 1.8)
+			draw_line(cn + Vector2(-22.0, 0.0), cn + Vector2(22.0, 0.0), rcol, 1.5)
+			draw_line(cn + Vector2(0.0, -22.0), cn + Vector2(0.0, 22.0), rcol, 1.5)
+			draw_arc(cn, 14.0, 0.0, TAU, 12, Color(rcol.r, rcol.g, rcol.b, rcol.a * 0.5), 1.0)
+
+		# 6. Floating rune particles
+		for p in _particles:
+			var alpha: float = (p["life"] / p["max_life"]) * 0.65
+			var sz    := 5.5
+			var pos: Vector2 = p["pos"]
+			var rcol := Color(0.58, 0.34, 0.10, alpha)
+			match int(p["sym"]):
+				0: # Cross rune
+					draw_line(pos + Vector2(-sz, 0.0), pos + Vector2(sz, 0.0), rcol, 1.2)
+					draw_line(pos + Vector2(0.0, -sz), pos + Vector2(0.0, sz), rcol, 1.2)
+				1: # Triangle rune
+					var t0 := pos + Vector2(0.0, -sz)
+					var t1 := pos + Vector2(sz * 0.87, sz * 0.5)
+					var t2 := pos + Vector2(-sz * 0.87, sz * 0.5)
+					draw_polyline(PackedVector2Array([t0, t1, t2, t0]), rcol, 1.0)
+				2: # Diamond rune
+					draw_line(pos + Vector2(-sz, 0.0), pos + Vector2(0.0, -sz), rcol, 1.0)
+					draw_line(pos + Vector2(0.0, -sz), pos + Vector2(sz, 0.0), rcol, 1.0)
+					draw_line(pos + Vector2(sz, 0.0),  pos + Vector2(0.0, sz),  rcol, 1.0)
+					draw_line(pos + Vector2(0.0, sz),  pos + Vector2(-sz, 0.0), rcol, 1.0)
+				3: # Circle rune with centre dot
+					draw_arc(pos, sz, 0.0, TAU, 12, rcol, 1.0)
+					draw_circle(pos, 1.8, rcol)

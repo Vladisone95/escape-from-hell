@@ -30,12 +30,14 @@ func _ready() -> void:
 	sprite = Node2D.new()
 	sprite.set_script(load("res://scripts/arena/PlayerArenaSprite.gd"))
 	sprite.scale = Vector2(2, 2)
+	sprite.position.y = -20.0  # offset sprite up so collision sits at feet
 	add_child(sprite)
 	sprite.start_idle()
 
 	# Hurtbox
 	hurtbox = Area2D.new()
 	hurtbox.set_script(load("res://scripts/arena/Hurtbox.gd"))
+	hurtbox.position.y = -20.0  # match sprite offset
 	hurtbox.collision_layer = 1 << 1  # layer 2: player_body
 	hurtbox.collision_mask = 1 << 4   # layer 5: enemy_attack
 	var hb_shape := CollisionShape2D.new()
@@ -50,12 +52,12 @@ func _ready() -> void:
 	health_bar = Node2D.new()
 	health_bar.set_script(load("res://scripts/arena/HealthBar.gd"))
 	health_bar.bar_width = 80.0
-	health_bar.y_offset = -48.0
+	health_bar.y_offset = -82.0  # adjusted for sprite offset
 	add_child(health_bar)
 
 	# Body collision
 	collision_layer = 1 << 1  # layer 2
-	collision_mask = (1 << 0) | (1 << 2)  # layer 1 (world) + layer 3 (enemy_body)
+	collision_mask = (1 << 0) | (1 << 2) | (1 << 6)  # world + enemy_body + meteor_obstacles
 
 func _physics_process(delta: float) -> void:
 	if _is_dead:
@@ -90,6 +92,12 @@ func _physics_process(delta: float) -> void:
 				sprite._stop_walk()
 				sprite.start_idle()
 
+	# Auto-attack nearest enemy in range
+	if _attack_cooldown <= 0.0:
+		var target: CharacterBody2D = _find_nearest_enemy()
+		if target != null:
+			_do_auto_attack(target)
+
 	# Knockback decay
 	_knockback_vel = _knockback_vel.move_toward(Vector2.ZERO, 1200.0 * delta)
 
@@ -99,9 +107,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _is_dead:
 		return
 
-	if event.is_action_pressed("attack") and _attack_cooldown <= 0.0:
-		_do_attack()
-
 	if event.is_action_pressed("dash") and _dash_cooldown <= 0.0 and not _is_dashing:
 		_do_dash()
 
@@ -109,17 +114,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		_do_interact()
 
 func _do_attack() -> void:
-	_attack_cooldown = GameData.effective_attack_cooldown()
+	var cooldown: float = GameData.effective_attack_cooldown()
+	_attack_cooldown = cooldown
 
-	var strike_count := GameData.attacks_per_press()
+	var strike_count: int = GameData.attacks_per_press()
 	for strike in strike_count:
 		if strike > 0:
 			await get_tree().create_timer(0.15).timeout
 			if not is_inside_tree():
 				return
-		_spawn_strike()
+		_spawn_strike(cooldown)
 
-func _spawn_strike() -> void:
+func _spawn_strike(cooldown: float = 0.5) -> void:
 	var dmg := GameData.effective_attack()
 	var AttackHitbox := load("res://scripts/arena/AttackHitbox.gd")
 
@@ -172,12 +178,76 @@ func _spawn_strike() -> void:
 		arc_vis.draw_polygon(pts, PackedColorArray([Color(1, 1, 1, 0.35)]))
 	)
 	arc_vis.queue_redraw()
-	get_tree().create_timer(0.15).timeout.connect(func():
+	get_tree().create_timer(cooldown).timeout.connect(func():
 		if is_instance_valid(arc_vis):
 			arc_vis.queue_free()
 	)
 
-	sprite.play_attack()
+	sprite.play_attack(cooldown)
+	SoundManager.play("attack")
+
+func _find_nearest_enemy() -> CharacterBody2D:
+	var attack_range: float = GameData.effective_attack_range()
+	var best_dist: float = attack_range
+	var best_target: CharacterBody2D = null
+	for enemy: Node in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(enemy) or not enemy is CharacterBody2D:
+			continue
+		if enemy.get("_state") == 4:  # State.DEAD
+			continue
+		var dist: float = global_position.distance_to(enemy.global_position)
+		# Subtract hurtbox radius so large enemies (boss) are targetable at their edge
+		var hb: Area2D = enemy.get("hurtbox") as Area2D
+		if hb != null and hb.get_child_count() > 0:
+			var shape_node: CollisionShape2D = hb.get_child(0) as CollisionShape2D
+			if shape_node != null and shape_node.shape is CircleShape2D:
+				dist -= (shape_node.shape as CircleShape2D).radius
+		if dist < best_dist:
+			best_dist = dist
+			best_target = enemy
+	return best_target
+
+func _do_auto_attack(target: CharacterBody2D) -> void:
+	var dir_to_target: Vector2 = (target.global_position - global_position).normalized()
+	_facing_dir = dir_to_target
+	sprite.set_facing_from_vec(dir_to_target)
+
+	if GameData.player_weapon_type == GameData.WeaponType.RANGED:
+		_do_ranged_attack(target)
+	else:
+		_do_attack()
+
+func _do_ranged_attack(target: CharacterBody2D) -> void:
+	var cooldown: float = GameData.effective_attack_cooldown()
+	_attack_cooldown = cooldown
+	var dmg: int = GameData.effective_attack()
+
+	var strike_count: int = GameData.attacks_per_press()
+	for strike: int in strike_count:
+		if strike > 0:
+			await get_tree().create_timer(0.15).timeout
+			if not is_inside_tree():
+				return
+		_fire_projectile(target, dmg)
+
+	sprite.play_attack(cooldown)
+	SoundManager.play("attack")
+
+func _fire_projectile(target: CharacterBody2D, dmg: int) -> void:
+	var target_pos: Vector2 = target.global_position if is_instance_valid(target) else global_position + _facing_dir * 200.0
+	var Proj: GDScript = load("res://scripts/arena/Projectile.gd")
+
+	var config: Dictionary = {
+		"color_core": Color(0.3, 0.6, 1.0, 0.85),
+		"color_inner": Color(0.5, 0.8, 1.0, 0.95),
+		"color_center": Color(0.85, 0.95, 1.0),
+		"color_glow": Color(0.2, 0.5, 1.0, 0.5),
+		"max_distance": GameData.effective_attack_range() * 1.2,
+		"override_layer": 1 << 3,
+		"override_mask": (1 << 2) | (1 << 0),
+	}
+
+	Proj.fire(get_parent(), global_position, target_pos, dmg, config)
 
 func get_dash_cooldown_remaining() -> float:
 	return maxf(0.0, _dash_cooldown)
@@ -190,6 +260,7 @@ func _do_dash() -> void:
 	_dash_dir = _facing_dir
 	_dash_timer = GameData.player_dash_duration
 	_dash_cooldown = GameData.effective_dash_cooldown()
+	SoundManager.play("dash")
 	dash_state_changed.emit(_dash_cooldown, GameData.effective_dash_cooldown())
 	hurtbox.start_iframes(GameData.player_dash_duration)
 	# Visual feedback
@@ -221,6 +292,7 @@ func _on_hit(damage: int, knockback_dir: Vector2) -> void:
 	_knockback_vel = knockback_dir
 	hurtbox.start_iframes(GameData.effective_iframes())
 	sprite.play_hurt()
+	SoundManager.play("hurt_p")
 	_flash_iframes(GameData.effective_iframes())
 
 	# Spawn damage number
@@ -230,6 +302,7 @@ func _on_hit(damage: int, knockback_dir: Vector2) -> void:
 	if GameData.player_health <= 0:
 		_is_dead = true
 		sprite.play_die()
+		SoundManager.play("die_p")
 		died.emit()
 
 func _flash_iframes(duration: float) -> void:
@@ -239,6 +312,10 @@ func _flash_iframes(duration: float) -> void:
 		tw.tween_property(sprite, "modulate:a", 0.2, 0.05)
 		tw.tween_property(sprite, "modulate:a", 1.0, 0.05)
 	tw.tween_property(sprite, "modulate", Color.WHITE, 0.0)
+
+func grant_iframes(duration: float) -> void:
+	hurtbox.start_iframes(duration)
+	_flash_iframes(duration)
 
 func get_facing() -> Vector2:
 	return _facing_dir

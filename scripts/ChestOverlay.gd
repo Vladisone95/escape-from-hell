@@ -53,6 +53,7 @@ func show_chest() -> void:
 	_chest_node.mouse_filter = Control.MOUSE_FILTER_STOP
 	_title_label.text = "A chest appears..."
 	visible = true
+	SoundManager.play("chest_appear")
 
 	# Clear old item slots
 	for child in _items_container.get_children():
@@ -279,6 +280,7 @@ func _open_chest() -> void:
 
 func _on_chest_opened() -> void:
 	_state = State.ITEMS_SHOWN
+	SoundManager.play("chest_open")
 	_chest_node.visible = false
 	_items_container.visible = true
 	# Reveal items one at a time with stagger
@@ -346,9 +348,11 @@ func _spawn_item_slots_staggered() -> void:
 		tw_rarity.tween_property(slot, "scale", Vector2.ONE, 0.12) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 		# Enable input after reveal
+		var _reveal_idx: int = i
 		tw_rarity.tween_callback(func() -> void:
 			slot.mouse_filter = Control.MOUSE_FILTER_STOP
 			rlbl.queue_free()
+			SoundManager.play("item_reveal", 1.0 + _reveal_idx * 0.26)
 		)
 
 	# Show title and loot button after all items revealed
@@ -515,6 +519,7 @@ func _on_loot_pressed() -> void:
 	if _selected_index < 0 or _selected_index >= _item_ids.size():
 		return
 	var item_id: String = _item_ids[_selected_index]
+	SoundManager.play("item_loot")
 	visible = false
 	item_looted.emit(item_id)
 

@@ -19,6 +19,8 @@ var _orb_target: Vector2 = Vector2.ZERO
 var _orb_start: Vector2 = Vector2.ZERO
 var _orb_progress: float = 0.0
 var _orb_duration: float = 0.6
+var _camera: Camera2D = null
+var _camera_parent: Node = null
 
 func init(player: CharacterBody2D, color: Color, linked_partner: Node2D, cd: float = 15.0) -> void:
 	_player = player
@@ -49,6 +51,8 @@ func _process(delta: float) -> void:
 			_orb_active = false
 			_finish_teleport()
 		_orb_pos = _orb_start.lerp(_orb_target, _ease_out_cubic(_orb_progress))
+		if _camera != null and is_instance_valid(_camera):
+			_camera.global_position = to_global(_orb_pos)
 
 	queue_redraw()
 
@@ -78,11 +82,25 @@ func interact() -> void:
 	_player.set_process_unhandled_input(false)
 	_player.hurtbox.collision_mask = 0
 
+	# Reparent camera to scene root so it can follow the orb independently
+	_camera = null
+	for child in _player.get_children():
+		if child is Camera2D:
+			_camera = child
+			break
+	if _camera != null:
+		_camera_parent = _camera.get_parent()
+		var cam_global: Vector2 = _camera.global_position
+		_camera_parent.remove_child(_camera)
+		get_parent().add_child(_camera)
+		_camera.global_position = cam_global
+
 	_orb_start = Vector2.ZERO
 	_orb_target = to_local(partner.global_position)
 	_orb_pos = _orb_start
 	_orb_progress = 0.0
 	_orb_active = true
+	SoundManager.play("teleport_out")
 
 	_flash_effect()
 
@@ -90,11 +108,22 @@ func _finish_teleport() -> void:
 	if not is_instance_valid(_player):
 		return
 	_player.global_position = partner.global_position + Vector2(0, 60)
+
+	# Reparent camera back to player
+	if _camera != null and is_instance_valid(_camera) and is_instance_valid(_camera_parent):
+		_camera.get_parent().remove_child(_camera)
+		_camera_parent.add_child(_camera)
+		_camera.position = Vector2.ZERO
+		_camera = null
+		_camera_parent = null
+
 	_player.visible = true
 	_player.set_physics_process(true)
 	_player.set_process_unhandled_input(true)
 	_player.hurtbox.collision_mask = 1 << 4
+	_player.grant_iframes(GameData.effective_iframes())
 	_is_teleporting = false
+	SoundManager.play("teleport_in")
 	partner._flash_effect()
 
 func _flash_effect() -> void:

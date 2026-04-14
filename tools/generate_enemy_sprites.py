@@ -375,10 +375,10 @@ def make_hellhound():
 # WARLOCK
 # ══════════════════════════════════════════════════════════════════
 WARLOCK_PAL = {
-    "body": color_f(0.18, 0.08, 0.28), "body_dk": color_f(0.10, 0.04, 0.18),
-    "body_lt": color_f(0.30, 0.14, 0.42), "skin": color_f(0.45, 0.32, 0.40),
-    "horn": color_f(0.22, 0.10, 0.30), "eye": color_f(0.7, 0.3, 1.0),
-    "accent": color_f(0.75, 0.25, 0.95),
+    "body": color_f(0.30, 0.06, 0.04), "body_dk": color_f(0.18, 0.03, 0.02),
+    "body_lt": color_f(0.45, 0.10, 0.06), "skin": color_f(0.50, 0.30, 0.22),
+    "horn": color_f(0.35, 0.12, 0.05), "eye": color_f(1.0, 0.5, 0.0),
+    "accent": color_f(1.0, 0.35, 0.05),
 }
 
 def make_warlock():
@@ -386,7 +386,7 @@ def make_warlock():
     p = s.p
 
     def _draw_staff(draw, sx, oy, cast):
-        """Draw staff with purple fire."""
+        """Draw staff with volcanic fire."""
         thrust = int(cast * 5)
         soy = oy - thrust
         # Staff shaft
@@ -394,13 +394,13 @@ def make_warlock():
         # Forked head
         s.dr(draw, sx-3, -25, 2, 4, p["horn"], soy)
         s.dr(draw, sx+1, -25, 2, 4, p["horn"], soy)
-        # Purple fire
+        # Volcanic fire
         fs = 1.0 + cast * 1.2
         fa = max(60, int((0.5 + cast * 0.5) * 255))
         r_fire = max(2, int(3.5 * fs))
-        fire_color = (128, 25, 204, fa)
-        fire_inner = (153, 51, 229, min(255, fa + 76))
-        fire_core = (191, 102, 255, min(255, fa + 102))
+        fire_color = (204, 50, 10, fa)
+        fire_inner = (230, 100, 20, min(255, fa + 76))
+        fire_core = (255, 200, 60, min(255, fa + 102))
         draw_filled_circle(draw, s.cx + sx, s.cy - 25 + soy, r_fire, fire_color, s.W, s.H)
         draw_filled_circle(draw, s.cx + sx, s.cy - 26 + soy, max(1, int(2.5*fs)), fire_inner, s.W, s.H)
         draw_filled_circle(draw, s.cx + sx, s.cy - 27 + soy, max(1, int(1.5*fs)), fire_core, s.W, s.H)
@@ -411,17 +411,17 @@ def make_warlock():
         s.dr(draw, -10, 5, 20, 13, p["body"], oy)
         s.dr(draw, 1, 5, 10, 13, p["body_dk"], oy)
         # Robe hem embers
-        s.dr(draw, -9, 17, 3, 1, (140, 50, 180, 150), oy)
-        s.dr(draw, 3, 17, 3, 1, (140, 50, 180, 120), oy)
+        s.dr(draw, -9, 17, 3, 1, (200, 60, 10, 150), oy)
+        s.dr(draw, 3, 17, 3, 1, (200, 60, 10, 120), oy)
         # Torso
         s.dr(draw, -8, -6, 16, 12, p["body"], oy)
         # Arms
         s.dr(draw, -13, -4, 5, 12, p["body_lt"], oy, lo)
         s.dr(draw, 8, -4, 5, 12, p["body"], oy, -lo)
         # Hand glow
-        s.dc(draw, -10, 9, 3, (128, 25, 204, 76), oy)
+        s.dc(draw, -10, 9, 3, (204, 60, 10, 76), oy)
         s.dc(draw, -10, 9, 2, lighten(p["accent"], 0.2), oy)
-        s.dc(draw, 11, 9, 3, (128, 25, 204, 76), oy)
+        s.dc(draw, 11, 9, 3, (204, 60, 10, 76), oy)
         s.dc(draw, 11, 9, 2, lighten(p["accent"], 0.2), oy)
         # Staff
         _draw_staff(draw, 0, oy, cast)
@@ -432,8 +432,8 @@ def make_warlock():
         # Eyes
         s.dr(draw, -4, -13, 3, 2, p["eye"], oy)
         s.dr(draw, 1, -13, 3, 2, p["eye"], oy)
-        s.dc(draw, -2, -12, 2, (128, 38, 204, 89), oy)
-        s.dc(draw, 2, -12, 2, (128, 38, 204, 89), oy)
+        s.dc(draw, -2, -12, 2, (204, 80, 10, 89), oy)
+        s.dc(draw, 2, -12, 2, (204, 80, 10, 89), oy)
 
     def back(draw, oy=0, lo=0, cast=0.0):
         s.dr(draw, -10, 5, 20, 13, p["body_dk"], oy)
@@ -451,7 +451,7 @@ def make_warlock():
         s.dr(draw, -5, -6, 10, 12, p["body"], oy)
         s.dr(draw, 1, -6, 4, 12, p["body_dk"], oy)
         s.dr(draw, 5, -4, 5, 12, p["body"], oy)
-        s.dc(draw, 8, 9, 2, (128, 25, 204, 76), oy)
+        s.dc(draw, 8, 9, 2, (204, 60, 10, 76), oy)
         s.dc(draw, 8, 9, 1, lighten(p["accent"], 0.2), oy)
         s.dr(draw, -8, -3, 4, 10, p["body_dk"], oy)
         _draw_staff(draw, 7, oy, cast)
@@ -459,7 +459,7 @@ def make_warlock():
         s.dc(draw, 2, -12, 5, p["body_dk"], oy)
         s.dc(draw, -1, -11, 4, (8, 3, 8, 255), oy)
         s.dr(draw, -4, -13, 3, 2, p["eye"], oy)
-        s.dc(draw, -2, -12, 2, (128, 38, 204, 89), oy)
+        s.dc(draw, -2, -12, 2, (204, 80, 10, 89), oy)
 
     return s, front, back, side
 

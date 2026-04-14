@@ -98,6 +98,9 @@ const BASE := {
 # Encounter types for waves
 enum Encounter { ENEMIES, SHOP, BOSS, SECRET }
 
+# Wave types for Act Map display icons
+enum WaveType { FIGHT = 0, BOSS = 1, SHOP = 2, SECRET = 3 }
+
 # Wave definitions — array index 0 = wave 1, etc.
 # Each wave is a dict with:
 #   "encounter": Encounter type
@@ -105,25 +108,31 @@ enum Encounter { ENEMIES, SHOP, BOSS, SECRET }
 #   "boss_name": String (only for BOSS encounter)
 const WAVES: Array = [
 	# Wave 1
-	{ "encounter": Encounter.ENEMIES, "enemies": [{ "type": "IMP", "count": 2 }, { "type": "WARLOCK", "count": 1 }] },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "IMP", "count": 2 }, { "type": "WARLOCK", "count": 1 }] },
 	# Wave 2
-	{ "encounter": Encounter.ENEMIES, "enemies": [{ "type": "DEMON", "count": 1 }] },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 1 }] },
 	# Wave 3 (BOSS)
-	{ "encounter": Encounter.BOSS, "boss_name": "DEMON OF VANITY", "enemies": [{ "type": "VANITY_BOSS", "count": 1 }] },
+	{ "encounter": Encounter.BOSS, "wave_type": WaveType.BOSS, "boss_name": "DEMON OF VANITY", "enemies": [{ "type": "VANITY_BOSS", "count": 1 }] },
 	# Wave 4
-	{ "encounter": Encounter.ENEMIES, "enemies": [{ "type": "DEMON", "count": 1 }, { "type": "IMP", "count": 2 }] },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 1 }, { "type": "IMP", "count": 2 }] },
 	# Wave 5
-	{ "encounter": Encounter.ENEMIES, "enemies": [{ "type": "DEMON", "count": 2 }, { "type": "HELLHOUND", "count": 1 }, { "type": "ABOMINATION", "count": 1 }] },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 2 }, { "type": "HELLHOUND", "count": 1 }, { "type": "ABOMINATION", "count": 1 }] },
 	# Wave 6
-	{ "encounter": Encounter.ENEMIES, "enemies": [{ "type": "DEMON", "count": 2 }, { "type": "IMP", "count": 2 }] },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 2 }, { "type": "IMP", "count": 2 }] },
 	# Wave 7
-	{ "encounter": Encounter.ENEMIES, "enemies": [{ "type": "IMP", "count": 3 }, { "type": "HELLHOUND", "count": 2 }] },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "IMP", "count": 3 }, { "type": "HELLHOUND", "count": 2 }] },
 	# Wave 8
-	{ "encounter": Encounter.ENEMIES, "enemies": [{ "type": "DEMON", "count": 2 }, { "type": "HELLHOUND", "count": 2 }] },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 2 }, { "type": "HELLHOUND", "count": 2 }] },
 	# Wave 9
-	{ "encounter": Encounter.ENEMIES, "enemies": [{ "type": "DEMON", "count": 3 }, { "type": "IMP", "count": 2 }, { "type": "HELLHOUND", "count": 1 }] },
-	# Wave 10 (BOSS)
-	{ "encounter": Encounter.ENEMIES, "enemies": [{ "type": "DEMON", "count": 4 }, { "type": "HELLHOUND", "count": 2 }, { "type": "IMP", "count": 2 }] },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 3 }, { "type": "IMP", "count": 2 }, { "type": "HELLHOUND", "count": 1 }] },
+	# Wave 10
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 4 }, { "type": "HELLHOUND", "count": 2 }, { "type": "IMP", "count": 2 }] },
+]
+
+## Act structure — add new dicts here for Act II, III, etc.
+## first_wave and last_wave are 1-based inclusive.
+const ACTS: Array = [
+	{ "id": 1, "name": "Act I: Descent", "first_wave": 1, "last_wave": 10 }
 ]
 
 # Per-wave stat overrides. Only the keys you specify here replace the base value.
@@ -167,3 +176,14 @@ static func get_boss_name(wave: int) -> String:
 ## Convert a type name to its int ID.
 static func type_id(type_name: String) -> int:
 	return TYPE_ID[type_name]
+
+## Return the WaveType for a given wave number (1-based).
+static func get_wave_type(wave: int) -> int:
+	return WAVES[wave - 1].get("wave_type", WaveType.FIGHT)
+
+## Return the act dict that contains the given wave number.
+static func get_act_for_wave(wave: int) -> Dictionary:
+	for act: Dictionary in ACTS:
+		if wave >= act["first_wave"] and wave <= act["last_wave"]:
+			return act
+	return ACTS[0]

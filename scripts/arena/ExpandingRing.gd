@@ -7,7 +7,7 @@ extends Area2D
 # ─────────────────────────────────────────────────────────────
 
 var damage: int = 50
-var expand_speed: float = 300.0
+var expand_speed: float = 225.0
 var max_radius: float = 2200.0
 var ring_width: float = 20.0
 var color_core: Color = Color(1.0, 0.15, 0.1)

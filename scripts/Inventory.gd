@@ -149,6 +149,10 @@ func bonus_regen() -> int:
 			total += 3 * slot["count"]
 	return total
 
+## Total bonus attack range from all items.
+func bonus_attack_range() -> float:
+	return 0.0
+
 ## Total bonus max health from all items.
 func bonus_max_health() -> int:
 	var total := 0

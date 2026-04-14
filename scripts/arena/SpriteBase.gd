@@ -49,13 +49,19 @@ func start_walk() -> void:
 func _stop_walk() -> void:
 	_is_walking = false
 
-func play_attack() -> void:
+func play_attack(duration: float = 0.0) -> void:
+	var anim_name: String = "attack_" + _get_dir_suffix()
 	_play_anim("attack", false)
-	if _anim.sprite_frames and _anim.sprite_frames.has_animation("attack_" + _get_dir_suffix()):
+	if _anim.sprite_frames and _anim.sprite_frames.has_animation(anim_name):
+		if duration > 0.0:
+			var frame_count: int = _anim.sprite_frames.get_frame_count(anim_name)
+			var fps: float = _anim.sprite_frames.get_animation_speed(anim_name)
+			var natural_dur: float = float(frame_count) / fps
+			_anim.speed_scale = natural_dur / duration
 		await _anim.animation_finished
+		_anim.speed_scale = 1.0
 	else:
-		# Fallback: wait the expected attack duration
-		await get_tree().create_timer(0.3).timeout
+		await get_tree().create_timer(duration if duration > 0.0 else 0.3).timeout
 
 func play_hurt() -> void:
 	var tw: Tween = create_tween().set_parallel(true)
