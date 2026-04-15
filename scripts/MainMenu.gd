@@ -111,6 +111,14 @@ func _build_ui() -> void:
 	start_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Arena.tscn"))
 	vbox.add_child(start_btn)
 
+	# Test scene button
+	var test_btn := Button.new()
+	test_btn.text = "TEST SCENE"
+	test_btn.custom_minimum_size = Vector2(280, 62)
+	test_btn.add_theme_font_size_override("font_size", 28)
+	test_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/TestScene.tscn"))
+	vbox.add_child(test_btn)
+
 	# Settings button
 	var settings_btn := Button.new()
 	settings_btn.text = "SETTINGS"
