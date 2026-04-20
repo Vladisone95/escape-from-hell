@@ -6,6 +6,7 @@ var _alpha: float = 1.0
 var _rise: float = 0.0
 
 func _ready() -> void:
+	z_index = 5
 	var tw := create_tween().set_parallel(true)
 	tw.tween_property(self, "_rise", -60.0, 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(self, "_alpha", 0.0, 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)

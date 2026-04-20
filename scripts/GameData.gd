@@ -5,24 +5,21 @@ var current_wave: int    = 1
 var current_act: int     = 1
 var _cursor_default: ImageTexture
 var _cursor_pointer: ImageTexture
-var player_health: int   = 100
-var player_max_health: int = 100
-var player_attack: int   = 10
-var player_armor: int    = 3
+var player_health: int   = 47
+var player_max_health: int = 47
+var player_attack: int   = 8
+var player_armor: int    = 0
 var player_spikes: int   = 0
 var player_regen: int    = 1
 
 # Real-time arena stats
-enum WeaponType { MELEE, RANGED }
+var player_attack_range: float = 70.0
 
-var player_weapon_type: int = WeaponType.MELEE
-var player_attack_range: float = 150.0
-
-var player_speed: float         = 280.0
+var player_speed: float         = 100.0
 var player_dash_speed: float    = 1000.0
-var player_dash_duration: float = 0.15
+var player_dash_duration: float = 0.075
 var player_dash_cooldown: float = 10.0
-var player_attack_cooldown: float = 0.5
+var player_attack_cooldown: float = 1.0
 var player_iframes: float       = 0.5
 
 const TOTAL_WAVES: int   = 10
@@ -165,21 +162,20 @@ func _draw_pointer_cursor(img: Image) -> void:
 func reset() -> void:
 	current_wave      = 1
 	current_act       = 1
-	player_health     = 100
-	player_max_health = 100
-	player_attack     = 10
-	player_armor      = 3
+	player_health     = 47
+	player_max_health = 47
+	player_attack     = 8
+	player_armor      = 0
 	player_spikes     = 0
 	player_regen      = 1
 	player_inventory  = Inventory.new()
 	player_upgrades   = Upgrades.new()
-	player_speed         = 280.0
+	player_speed         = 100.0
 	player_dash_speed    = 1000.0
-	player_dash_duration = 0.15
+	player_dash_duration = 0.075
 	player_dash_cooldown = 10.0
-	player_attack_cooldown = 0.5
-	player_weapon_type   = WeaponType.MELEE
-	player_attack_range  = 150.0
+	player_attack_cooldown = 1.0
+	player_attack_range  = 70.0
 	player_iframes       = 0.5
 
 func is_item_reward_wave() -> bool:

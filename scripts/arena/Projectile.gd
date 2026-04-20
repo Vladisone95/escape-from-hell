@@ -2,13 +2,10 @@ extends Area2D
 
 var damage: int = 10
 var direction: Vector2 = Vector2.RIGHT
-var speed: float = 370.0
+var speed: float = 250.0
 var max_distance: float = 1000.0
-var radius: float = 16.0
+var radius: float = 6.0
 var color_core: Color = Color(1.0, 0.45, 0.05, 0.85)
-var color_inner: Color = Color(1.0, 0.7, 0.1, 0.95)
-var color_center: Color = Color(1.0, 0.95, 0.7)
-var color_glow: Color = Color(1.0, 0.3, 0.0, 0.5)
 var override_layer: int = -1
 var override_mask: int = -1
 var _distance_traveled: float = 0.0
@@ -23,16 +20,17 @@ func _ready() -> void:
 	if override_mask >= 0:
 		collision_mask = override_mask
 
+	rotation = direction.angle()
+
 	var shape := CollisionShape2D.new()
 	var circle := CircleShape2D.new()
 	circle.radius = radius
 	shape.shape = circle
+	shape.position = Vector2(6.0, 0.0)
 	add_child(shape)
 
 	_anim = AnimatedSprite2D.new()
 	_anim.sprite_frames = load("res://assets/spriteframes/projectile.tres")
-	_anim.scale = Vector2(radius / 8.0, radius / 8.0)
-	# Tint the neutral sprite to match the projectile's color
 	_anim.self_modulate = color_core
 	add_child(_anim)
 	_anim.play("fly")

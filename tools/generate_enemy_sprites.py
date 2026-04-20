@@ -87,10 +87,10 @@ class EnemySprite:
 # DEMON
 # ══════════════════════════════════════════════════════════════════
 DEMON_PAL = {
-    "body": color_f(0.55, 0.08, 0.08), "body_dk": color_f(0.38, 0.04, 0.04),
-    "body_lt": color_f(0.72, 0.15, 0.10), "skin": color_f(0.70, 0.30, 0.25),
-    "horn": color_f(0.25, 0.12, 0.08), "eye": color_f(1.0, 0.85, 0.0),
-    "accent": color_f(0.90, 0.30, 0.05),
+    "body": color_f(0.50, 0.08, 0.08), "body_dk": color_f(0.25, 0.04, 0.04),
+    "body_lt": color_f(0.65, 0.15, 0.12), "skin": color_f(0.55, 0.22, 0.18),
+    "horn": color_f(0.15, 0.08, 0.06), "eye": color_f(1.0, 0.30, 0.0),
+    "accent": color_f(0.85, 0.18, 0.08),
 }
 
 def make_demon():
@@ -174,10 +174,10 @@ def make_demon():
 # IMP
 # ══════════════════════════════════════════════════════════════════
 IMP_PAL = {
-    "body": color_f(0.45, 0.18, 0.50), "body_dk": color_f(0.30, 0.10, 0.35),
-    "body_lt": color_f(0.60, 0.28, 0.65), "skin": color_f(0.55, 0.35, 0.55),
-    "horn": color_f(0.20, 0.10, 0.15), "eye": color_f(0.0, 1.0, 0.4),
-    "accent": color_f(0.80, 0.20, 0.70),
+    "body": color_f(0.35, 0.06, 0.08), "body_dk": color_f(0.18, 0.03, 0.04),
+    "body_lt": color_f(0.50, 0.12, 0.12), "skin": color_f(0.45, 0.15, 0.15),
+    "horn": color_f(0.12, 0.05, 0.04), "eye": color_f(1.0, 0.12, 0.08),
+    "accent": color_f(0.80, 0.10, 0.12),
 }
 
 def make_imp():
@@ -275,10 +275,10 @@ def make_imp():
 # HELLHOUND
 # ══════════════════════════════════════════════════════════════════
 HOUND_PAL = {
-    "body": color_f(0.20, 0.20, 0.22), "body_dk": color_f(0.10, 0.10, 0.12),
-    "body_lt": color_f(0.35, 0.30, 0.28), "skin": color_f(0.30, 0.22, 0.18),
-    "horn": color_f(0.12, 0.08, 0.06), "eye": color_f(1.0, 0.25, 0.0),
-    "accent": color_f(0.90, 0.45, 0.05),
+    "body": color_f(0.18, 0.06, 0.06), "body_dk": color_f(0.08, 0.03, 0.03),
+    "body_lt": color_f(0.30, 0.10, 0.08), "skin": color_f(0.25, 0.10, 0.08),
+    "horn": color_f(0.10, 0.04, 0.03), "eye": color_f(1.0, 0.15, 0.0),
+    "accent": color_f(0.75, 0.12, 0.05),
 }
 
 def make_hellhound():
@@ -355,7 +355,7 @@ def make_hellhound():
         s.dr(draw, -12, -14, 4, 6, mc, oy)
         s.dr(draw, -8, -15, 3, 7, mc, oy)
         s.dr(draw, -5, -14, 3, 6, mc, oy)
-        flame = color_f(1.0, 0.6, 0.0)
+        flame = color_f(0.85, 0.15, 0.05)
         s.dr(draw, -11, -16, 3, 4, flame, oy)
         # Head
         s.dr(draw, -16, -10, 10, 10, p["body"], oy)
@@ -375,10 +375,10 @@ def make_hellhound():
 # WARLOCK
 # ══════════════════════════════════════════════════════════════════
 WARLOCK_PAL = {
-    "body": color_f(0.30, 0.06, 0.04), "body_dk": color_f(0.18, 0.03, 0.02),
-    "body_lt": color_f(0.45, 0.10, 0.06), "skin": color_f(0.50, 0.30, 0.22),
-    "horn": color_f(0.35, 0.12, 0.05), "eye": color_f(1.0, 0.5, 0.0),
-    "accent": color_f(1.0, 0.35, 0.05),
+    "body": color_f(0.22, 0.04, 0.04), "body_dk": color_f(0.12, 0.02, 0.02),
+    "body_lt": color_f(0.38, 0.08, 0.06), "skin": color_f(0.42, 0.16, 0.12),
+    "horn": color_f(0.20, 0.08, 0.05), "eye": color_f(1.0, 0.25, 0.0),
+    "accent": color_f(0.90, 0.20, 0.05),
 }
 
 def make_warlock():
@@ -468,10 +468,10 @@ def make_warlock():
 # ABOMINATION
 # ══════════════════════════════════════════════════════════════════
 ABOM_PAL = {
-    "body": color_f(0.55, 0.12, 0.12), "body_dk": color_f(0.35, 0.06, 0.06),
-    "body_lt": color_f(0.70, 0.20, 0.18), "skin": color_f(0.75, 0.30, 0.28),
-    "horn": color_f(0.25, 0.10, 0.08), "eye": color_f(1.0, 0.9, 0.0),
-    "accent": color_f(0.90, 0.15, 0.10),
+    "body": color_f(0.48, 0.08, 0.08), "body_dk": color_f(0.28, 0.04, 0.04),
+    "body_lt": color_f(0.62, 0.16, 0.14), "skin": color_f(0.58, 0.22, 0.18),
+    "horn": color_f(0.16, 0.07, 0.05), "eye": color_f(1.0, 0.35, 0.0),
+    "accent": color_f(0.82, 0.12, 0.08),
 }
 
 def make_abomination():
@@ -642,7 +642,7 @@ def make_abomination():
 # GENERATE ALL SPRITESHEETS
 # ══════════════════════════════════════════════════════════════════
 
-def generate_spritesheet(enemy_maker, out_dir, has_cast=False):
+def generate_spritesheet(enemy_maker, out_dir, has_cast=False, target_size=None):
     s, front, back, side = enemy_maker()
     frames = []
     frame_info = []
@@ -692,16 +692,24 @@ def generate_spritesheet(enemy_maker, out_dir, has_cast=False):
         frames.append(die_img)
         frame_info.append((f"die_down_{i+1}", 125))
 
+    # Resize frames if target_size specified
+    if target_size:
+        tw, th = target_size
+        frames = [f.resize((tw, th), Image.NEAREST) for f in frames]
+        fw, fh = tw, th
+    else:
+        fw, fh = s.W, s.H
+
     # Build spritesheet
     cols = 8
     rows = math.ceil(len(frames) / cols)
-    sheet = Image.new('RGBA', (cols * s.W, rows * s.H), (0, 0, 0, 0))
+    sheet = Image.new('RGBA', (cols * fw, rows * fh), (0, 0, 0, 0))
     json_frames = {}
 
     for idx, (img, (name, dur)) in enumerate(zip(frames, frame_info)):
         col, row = idx % cols, idx // cols
-        sheet.paste(img, (col * s.W, row * s.H))
-        json_frames[name] = {"frame": {"x": col*s.W, "y": row*s.H, "w": s.W, "h": s.H}, "duration": dur}
+        sheet.paste(img, (col * fw, row * fh))
+        json_frames[name] = {"frame": {"x": col*fw, "y": row*fh, "w": fw, "h": fh}, "duration": dur}
 
     sheet.save(f"{out_dir}/{s.name}.png")
 
@@ -725,18 +733,18 @@ def generate_spritesheet(enemy_maker, out_dir, has_cast=False):
 
     meta = {
         "frames": json_frames,
-        "meta": {"size": {"w": cols*s.W, "h": rows*s.H}, "frame_size": {"w": s.W, "h": s.H}, "scale": 1},
+        "meta": {"size": {"w": cols*fw, "h": rows*fh}, "frame_size": {"w": fw, "h": fh}, "scale": 1},
         "animations": animations
     }
 
     with open(f"{out_dir}/{s.name}.json", 'w') as f:
         json.dump(meta, f, indent=2)
 
-    print(f"  {s.name}: {len(frames)} frames, {cols*s.W}x{rows*s.H} sheet")
+    print(f"  {s.name}: {len(frames)} frames, {cols*fw}x{rows*fh} sheet")
 
 
 if __name__ == "__main__":
-    base = "/root/home-projects/escape-from-hell/assets/sprites/enemies"
+    base = "./assets/sprites/enemies"
     print("Generating enemy spritesheets...")
     generate_spritesheet(make_demon, f"{base}/demon")
     generate_spritesheet(make_imp, f"{base}/imp")

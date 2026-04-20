@@ -6,6 +6,7 @@ var _log_lines: Array[String] = []
 
 # Bottom-right health ring + dash indicator
 var _ring_widget: Control
+var _stats_widget: Control
 var _current_hp: int = 100
 var _max_hp: int = 100
 
@@ -116,6 +117,17 @@ func _build_ui() -> void:
 	_ring_widget.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ring_widget.draw.connect(_draw_ring_widget)
 	add_child(_ring_widget)
+
+	# Stats panel (bottom-left)
+	_stats_widget = Control.new()
+	_stats_widget.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	_stats_widget.offset_left = 12
+	_stats_widget.offset_right = 155
+	_stats_widget.offset_top = -244
+	_stats_widget.offset_bottom = -98
+	_stats_widget.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stats_widget.draw.connect(_draw_stats_widget)
+	add_child(_stats_widget)
 
 func _draw_ring_widget() -> void:
 	var widget: Control = _ring_widget
@@ -235,6 +247,97 @@ func _draw_wind_gust(widget: Control, pos: Vector2, color: Color) -> void:
 			pts.append(start_pt + Vector2(x, y))
 		widget.draw_polyline(pts, color, 1.5)
 
+# ── Stats panel drawing ─────────────────────────────────────
+
+func _draw_stats_widget() -> void:
+	var w: Control = _stats_widget
+	var sz: Vector2 = w.size
+
+	# Panel background
+	w.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.06, 0.04, 0.04, 0.8))
+	w.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.55, 0.18, 0.08, 0.6), false, 1.0)
+
+	var font: Font = ThemeDB.fallback_font
+	var fs: int = 14
+	var text_col := Color(0.92, 0.88, 0.82)
+	var ix: float = 14.0
+	var tx: float = 34.0
+	var y0: float = 20.0
+	var rh: float = 26.0
+
+	# Attack
+	_draw_icon_swords(w, Vector2(ix, y0), Color(1.0, 0.5, 0.15))
+	w.draw_string(font, Vector2(tx, y0 + 5), str(GameData.effective_attack()), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_col)
+
+	# Attack Speed
+	var y1: float = y0 + rh
+	_draw_icon_sword_wind(w, Vector2(ix, y1), Color(0.6, 0.85, 1.0))
+	var aps: float = 1.0 / maxf(GameData.effective_attack_cooldown(), 0.01)
+	w.draw_string(font, Vector2(tx, y1 + 5), "%.1f/s" % aps, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_col)
+
+	# Movement Speed
+	var y2: float = y0 + rh * 2
+	_draw_icon_boot(w, Vector2(ix, y2), Color(0.4, 0.9, 0.35))
+	w.draw_string(font, Vector2(tx, y2 + 5), str(int(GameData.effective_speed())), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_col)
+
+	# Armor
+	var y3: float = y0 + rh * 3
+	_draw_icon_shield(w, Vector2(ix, y3), Color(0.55, 0.65, 0.95))
+	w.draw_string(font, Vector2(tx, y3 + 5), str(GameData.effective_armor()), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_col)
+
+	# Range
+	var y4: float = y0 + rh * 4
+	_draw_icon_range(w, Vector2(ix, y4), Color(1.0, 0.75, 0.3))
+	w.draw_string(font, Vector2(tx, y4 + 5), str(int(GameData.effective_attack_range())), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_col)
+
+func _draw_icon_swords(w: Control, c: Vector2, color: Color) -> void:
+	w.draw_line(c + Vector2(-6, 7), c + Vector2(6, -7), color, 2.0)
+	w.draw_line(c + Vector2(6, 7), c + Vector2(-6, -7), color, 2.0)
+	w.draw_circle(c + Vector2(6, -7), 1.2, Color(1, 1, 1, 0.4))
+	w.draw_circle(c + Vector2(-6, -7), 1.2, Color(1, 1, 1, 0.4))
+
+func _draw_icon_sword_wind(w: Control, c: Vector2, color: Color) -> void:
+	w.draw_line(c + Vector2(-2, 8), c + Vector2(-2, -8), color, 2.0)
+	w.draw_line(c + Vector2(-5, 2), c + Vector2(1, 2), color * 0.7, 1.5)
+	w.draw_circle(c + Vector2(-2, 8), 1.5, color * 0.6)
+	for i in 3:
+		var yo: float = float(i) * 5.0 - 5.0
+		var pts := PackedVector2Array()
+		for s in 5:
+			var t: float = float(s) / 4.0
+			pts.append(c + Vector2(3 + t * 8.0, yo + sin(t * PI) * 1.5))
+		w.draw_polyline(pts, color * 0.5, 1.0)
+
+func _draw_icon_boot(w: Control, c: Vector2, color: Color) -> void:
+	var shaft := PackedVector2Array([
+		c + Vector2(-3, -7), c + Vector2(2, -7),
+		c + Vector2(2, 1), c + Vector2(-3, 1),
+	])
+	w.draw_polygon(shaft, PackedColorArray([color]))
+	var sole := PackedVector2Array([
+		c + Vector2(-4, 1), c + Vector2(7, 1),
+		c + Vector2(8, 4), c + Vector2(-4, 4),
+	])
+	w.draw_polygon(sole, PackedColorArray([color * 0.8]))
+
+func _draw_icon_shield(w: Control, c: Vector2, color: Color) -> void:
+	var pts := PackedVector2Array([
+		c + Vector2(0, -8), c + Vector2(7, -5),
+		c + Vector2(7, 1), c + Vector2(0, 8),
+		c + Vector2(-7, 1), c + Vector2(-7, -5),
+	])
+	w.draw_polygon(pts, PackedColorArray([color]))
+	w.draw_polyline(PackedVector2Array([
+		c + Vector2(0, -5), c + Vector2(4, -3),
+		c + Vector2(4, 0), c + Vector2(0, 5),
+	]), Color(1, 1, 1, 0.2), 1.0)
+
+func _draw_icon_range(w: Control, c: Vector2, color: Color) -> void:
+	w.draw_arc(c, 7.0, -0.5, 0.5, 12, color, 1.5)
+	w.draw_arc(c, 4.0, -0.5, 0.5, 8, color * 0.7, 1.5)
+	w.draw_line(c, c + Vector2(8, 0), color * 0.5, 1.0)
+	w.draw_circle(c + Vector2(8, 0), 1.5, color)
+
 func update_hp(current: int, mx: int) -> void:
 	_current_hp = current
 	_max_hp = mx
@@ -243,7 +346,8 @@ func update_wave(wave: int) -> void:
 	wave_label.text = "WAVE %d / %d" % [wave, GameData.TOTAL_WAVES]
 
 func update_stats() -> void:
-	pass
+	if _stats_widget:
+		_stats_widget.queue_redraw()
 
 func log_msg(text: String) -> void:
 	_log_lines.append(text)

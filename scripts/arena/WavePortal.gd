@@ -22,7 +22,6 @@ func init(player: CharacterBody2D) -> void:
 	add_child(col)
 	body_entered.connect(_on_body_entered)
 	body_exited.connect(_on_body_exited)
-	z_index = 2
 	# Spawn bounce animation
 	modulate = Color(1.0, 1.0, 1.0, 0.0)
 	scale = Vector2(0.1, 0.1)

@@ -12,7 +12,6 @@ var _anim: AnimatedSprite2D
 func init(player: CharacterBody2D) -> void:
 	_player = player
 	add_to_group("interactable")
-	z_index = 1
 
 	# Set up animated sprite
 	_anim = AnimatedSprite2D.new()

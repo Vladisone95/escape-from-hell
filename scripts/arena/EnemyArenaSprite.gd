@@ -17,6 +17,12 @@ func _get_spriteframes_path() -> String:
 		return SPRITEFRAMES_PATHS[etype]
 	return ""
 
+func _apply_flip() -> void:
+	if etype == EType.HELLHOUND:
+		_anim.flip_h = (facing == Facing.RIGHT)
+	else:
+		_anim.flip_h = (facing == Facing.LEFT)
+
 func set_facing_from_vec(dir: Vector2) -> void:
 	## Enemy facing uses simple axis dominance (no hysteresis).
 	if abs(dir.x) >= abs(dir.y):

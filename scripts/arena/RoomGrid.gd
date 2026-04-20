@@ -3,10 +3,10 @@ class_name RoomGrid
 
 const LAVA: int = 0
 const FLOOR: int = 1
-const CELL_SIZE: int = 32
-const BORDER: int = 12   # lava margin around the ground (12 cells = 384px)
-const GRID_W: int = 64   # 40 playable + 12-cell border each side
-const GRID_H: int = 64   # 40 playable + 12-cell border each side
+const CELL_SIZE: int = 64
+const BORDER: int = 6    # lava margin around the ground (6 cells = 384px)
+const GRID_W: int = 32   # 20 playable + 6-cell border each side
+const GRID_H: int = 32   # 20 playable + 6-cell border each side
 
 var width: int = 0
 var height: int = 0
@@ -25,18 +25,44 @@ func generate(seed_val: int, boss_mode: bool = false) -> void:
 	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 	rng.seed = seed_val
 
-	# Fill central rectangle as floor (perfect square)
-	var margin: int = BORDER
-	for gy: int in range(margin, height - margin):
-		for gx: int in range(margin, width - margin):
+	# Noise for organic arena shape
+	var noise: FastNoiseLite = FastNoiseLite.new()
+	noise.seed = seed_val
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.12
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = 3
+
+	var cx: float = width * 0.5
+	var cy: float = height * 0.5
+	var play_half: float = (width - 2.0 * BORDER) * 0.5
+	var threshold: float = 0.05 if boss_mode else 0.15
+
+	# Main arena heatmap: smoothstep falloff + noise → organic edges
+	for gy: int in range(BORDER, height - BORDER):
+		for gx: int in range(BORDER, width - BORDER):
+			var dx: float = (float(gx) - cx) / play_half
+			var dy: float = (float(gy) - cy) / play_half
+			var dist: float = max(abs(dx), abs(dy))
+			var heat: float = 1.0 - smoothstep(0.4, 1.0, dist)
+			heat += noise.get_noise_2d(float(gx), float(gy)) * 0.35
+			if heat > threshold:
+				set_cell(gx, gy, FLOOR)
+
+	# Guarantee center floor for player spawn
+	for gy: int in range(int(cy) - 3, int(cy) + 4):
+		for gx: int in range(int(cx) - 3, int(cx) + 4):
 			set_cell(gx, gy, FLOOR)
 
 	# Interior lava pools
 	if not boss_mode:
-		_add_lava_pools(rng, margin)
+		_add_lava_pools(rng, BORDER)
 
-	# Lava islands (decorative ground patches in the outer lava)
-	_add_islands(rng, margin)
+	# Keep only floor connected to center
+	_flood_fill_keep_connected(int(cx), int(cy))
+
+	# Organic lava islands
+	_add_noise_islands(seed_val)
 
 func get_cell(gx: int, gy: int) -> int:
 	if gx < 0 or gx >= width or gy < 0 or gy >= height:
@@ -147,16 +173,16 @@ func _add_lava_pools(rng: RandomNumberGenerator, margin: int) -> void:
 	var pools: Array[Rect2i] = []
 	var center_x: int = width / 2
 	var center_y: int = height / 2
-	var min_edge: int = 3
-	var min_center: int = 6
-	var min_gap: int = 3
+	var min_edge: int = 2
+	var min_center: int = 3
+	var min_gap: int = 2
 
 	for i: int in pool_count:
 		var attempts: int = 0
 		while attempts < 30:
 			attempts += 1
-			var pw: int = rng.randi_range(3, 6)
-			var ph: int = rng.randi_range(3, 6)
+			var pw: int = rng.randi_range(2, 3)
+			var ph: int = rng.randi_range(2, 3)
 			var px: int = rng.randi_range(margin + min_edge, width - margin - min_edge - pw)
 			var py: int = rng.randi_range(margin + min_edge, height - margin - min_edge - ph)
 			# Avoid center (player spawn)
@@ -182,46 +208,60 @@ func _add_lava_pools(rng: RandomNumberGenerator, margin: int) -> void:
 					set_cell(gx, gy, LAVA)
 			break
 
-func _add_islands(rng: RandomNumberGenerator, margin: int) -> void:
-	var islands: Array[Rect2i] = []
-	var arena_ring: Rect2i = Rect2i(margin - 2, margin - 2,
-		width - 2 * margin + 4, height - 2 * margin + 4)
+func _flood_fill_keep_connected(start_x: int, start_y: int) -> void:
+	var connected: PackedByteArray = PackedByteArray()
+	connected.resize(width * height)
+	connected.fill(0)
 
-	# Small islands (1x2 ground, 3x3 footprint)
-	var small_count: int = rng.randi_range(3, 5)
-	for i: int in small_count:
-		_try_place_island(rng, 1, 2, islands, arena_ring)
+	var queue: Array[Vector2i] = [Vector2i(start_x, start_y)]
+	connected[start_y * width + start_x] = 1
 
-	# One bigger island (2x2 to 3x3 ground)
-	if rng.randf() < 0.7:
-		var bw: int = rng.randi_range(2, 3)
-		var bh: int = rng.randi_range(2, 3)
-		_try_place_island(rng, bw, bh, islands, arena_ring)
+	while not queue.is_empty():
+		var cell: Vector2i = queue.pop_back()
+		for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var nx: int = cell.x + dir.x
+			var ny: int = cell.y + dir.y
+			if nx < 0 or nx >= width or ny < 0 or ny >= height:
+				continue
+			var idx: int = ny * width + nx
+			if connected[idx] == 1 or not is_floor(nx, ny):
+				continue
+			connected[idx] = 1
+			queue.append(Vector2i(nx, ny))
 
-	# One large island (5x6 ground)
-	_try_place_island(rng, 5, 6, islands, arena_ring)
+	for gy: int in height:
+		for gx: int in width:
+			if is_floor(gx, gy) and connected[gy * width + gx] == 0:
+				set_cell(gx, gy, LAVA)
 
-func _try_place_island(rng: RandomNumberGenerator, iw: int, ih: int,
-		islands: Array[Rect2i], arena_ring: Rect2i) -> void:
-	for attempt: int in 40:
-		var ix: int = rng.randi_range(1, width - iw - 1)
-		var iy: int = rng.randi_range(1, height - ih - 1)
-		var ground_rect: Rect2i = Rect2i(ix, iy, iw, ih)
-		var footprint: Rect2i = Rect2i(ix - 1, iy - 1, iw + 2, ih + 2)
-		if footprint.intersects(arena_ring):
-			continue
-		var overlap: bool = false
-		for existing: Rect2i in islands:
-			var gap_rect: Rect2i = Rect2i(
-				existing.position - Vector2i(3, 3),
-				existing.size + Vector2i(6, 6))
-			if gap_rect.intersects(ground_rect):
-				overlap = true
-				break
-		if overlap:
-			continue
-		islands.append(ground_rect)
-		for gy: int in range(iy, iy + ih):
-			for gx: int in range(ix, ix + iw):
+func _add_noise_islands(seed_val: int) -> void:
+	# Mark cells near main arena floor (gap between arena and islands)
+	var near_floor: PackedByteArray = PackedByteArray()
+	near_floor.resize(width * height)
+	near_floor.fill(0)
+	var gap: int = 2
+	for gy: int in height:
+		for gx: int in width:
+			if not is_floor(gx, gy):
+				continue
+			for dy: int in range(-gap, gap + 1):
+				for dx: int in range(-gap, gap + 1):
+					var nx: int = gx + dx
+					var ny: int = gy + dy
+					if nx >= 0 and nx < width and ny >= 0 and ny < height:
+						near_floor[ny * width + nx] = 1
+
+	var noise: FastNoiseLite = FastNoiseLite.new()
+	noise.seed = seed_val + 7777
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.2
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = 2
+
+	for gy: int in range(2, height - 2):
+		for gx: int in range(2, width - 2):
+			if near_floor[gy * width + gx] == 1:
+				continue
+			var n: float = noise.get_noise_2d(float(gx), float(gy))
+			if n > 0.3:
 				set_cell(gx, gy, FLOOR)
-		return

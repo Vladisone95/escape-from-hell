@@ -80,8 +80,8 @@ func _build_ui() -> void:
 	viewport_container.add_child(sub_viewport)
 
 	var arena_sprite = load("res://scripts/arena/PlayerArenaSprite.gd").new()
-	arena_sprite.position = Vector2(150, 175)
-	arena_sprite.scale = Vector2(5, 5)
+	arena_sprite.position = Vector2(150, 190)
+	arena_sprite.scale = Vector2(1.8, 1.8)
 	sub_viewport.add_child(arena_sprite)
 	_player_sprite = arena_sprite
 

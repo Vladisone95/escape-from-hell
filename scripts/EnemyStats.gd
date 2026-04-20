@@ -20,59 +20,73 @@ const BASE := {
 	"DEMON": {
 		"health": 35,
 		"attack": 9,
-		"speed": 90,
+		"speed": 60,
 		"armor": 2,
-		"attack_range": 90.0,
+		"attack_range": 40.0,
 		"attack_cooldown": 2.2,
+		"rarity": Rarity.COMMON,
+		"base_difficulty": 15.0,
+		"health_scale": 1.0,
+		"damage_scale": 1.0,
 	},
 	"IMP": {
 		"health": 18,
 		"attack": 4,
-		"speed": 180,
+		"speed": 120,
 		"armor": 0,
-		"attack_range": 70.0,
+		"attack_range": 30.0,
 		"attack_cooldown": 1.3,
+		"rarity": Rarity.COMMON,
+		"base_difficulty": 10.0,
+		"health_scale": 1.0,
+		"damage_scale": 1.0,
 	},
 	"HELLHOUND": {
 		"health": 22,
 		"attack": 7,
-		"speed": 120,
+		"speed": 80,
 		"armor": 1,
-		"attack_range": 80.0,
+		"attack_range": 35.0,
 		"attack_cooldown": 2.0,
+		"rarity": Rarity.COMMON,
+		"base_difficulty": 25.0,
+		"health_scale": 1.0,
+		"damage_scale": 1.0,
 	},
 	"WARLOCK": {
 		"health": 25,
 		"attack": 11,
-		"speed": 75,
+		"speed": 50,
 		"armor": 1,
-		"attack_range": 800.0,
+		"attack_range": 280.0,
 		"attack_cooldown": 3.0,
+		"rarity": Rarity.COMMON,
+		"base_difficulty": 15.0,
+		"health_scale": 1.0,
+		"damage_scale": 1.0,
 		"projectile": {
-			"speed": 300.0,
+			"speed": 200.0,
 			"max_distance": 1000.0,
-			"radius": 16.0,
+			"radius": 6.0,
 			"color_core": Color(1.0, 0.45, 0.05, 0.85),
-			"color_inner": Color(1.0, 0.7, 0.1, 0.95),
-			"color_center": Color(1.0, 0.95, 0.7),
-			"color_glow": Color(1.0, 0.3, 0.0, 0.5),
 		},
 	},
 	"ABOMINATION": {
 		"health": 70,
 		"attack": 6,
-		"speed": 50,
+		"speed": 35,
 		"armor": 0,
 		"attack_range": 600.0,
 		"attack_cooldown": 4.5,
+		"rarity": Rarity.RARE,
+		"base_difficulty": 50.0,
+		"health_scale": 1.0,
+		"damage_scale": 1.0,
 		"projectile": {
-			"speed": 300.0,
+			"speed": 200.0,
 			"max_distance": 700.0,
-			"radius": 20.0,
+			"radius": 6.0,
 			"color_core": Color(0.6, 0.1, 0.8, 0.85),
-			"color_inner": Color(0.8, 0.3, 1.0, 0.95),
-			"color_center": Color(1.0, 0.8, 1.0),
-			"color_glow": Color(0.5, 0.0, 0.7, 0.5),
 		},
 	},
 	"VANITY_BOSS": {
@@ -83,14 +97,15 @@ const BASE := {
 		"attack_range": 2000.0,
 		"attack_cooldown": 2.0,
 		"is_boss": true,
+		"rarity": Rarity.BOSS,
+		"base_difficulty": 0.0,
+		"health_scale": 1.0,
+		"damage_scale": 1.0,
 		"projectile": {
-			"speed": 250.0,
+			"speed": 170.0,
 			"max_distance": 2500.0,
-			"radius": 18.0,
+			"radius": 6.0,
 			"color_core": Color(0.95, 0.3, 0.5, 0.85),
-			"color_inner": Color(1.0, 0.5, 0.7, 0.95),
-			"color_center": Color(1.0, 0.85, 0.9),
-			"color_glow": Color(0.9, 0.2, 0.4, 0.5),
 		},
 	},
 }
@@ -101,32 +116,23 @@ enum Encounter { ENEMIES, SHOP, BOSS, SECRET }
 # Wave types for Act Map display icons
 enum WaveType { FIGHT = 0, BOSS = 1, SHOP = 2, SECRET = 3 }
 
+# Enemy rarity tiers
+enum Rarity { COMMON, UNCOMMON, RARE, EPIC, BOSS }
+
 # Wave definitions — array index 0 = wave 1, etc.
-# Each wave is a dict with:
-#   "encounter": Encounter type
-#   "enemies": Array of { "type": "<NAME>", "count": N }
-#   "boss_name": String (only for BOSS encounter)
+# FIGHT waves use difficulty-budget spawning (see generate_wave_enemies).
+# BOSS waves spawn a single boss from "boss_type".
 const WAVES: Array = [
-	# Wave 1
-	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "IMP", "count": 2 }, { "type": "WARLOCK", "count": 1 }] },
-	# Wave 2
-	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 1 }] },
-	# Wave 3 (BOSS)
-	{ "encounter": Encounter.BOSS, "wave_type": WaveType.BOSS, "boss_name": "DEMON OF VANITY", "enemies": [{ "type": "VANITY_BOSS", "count": 1 }] },
-	# Wave 4
-	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 1 }, { "type": "IMP", "count": 2 }] },
-	# Wave 5
-	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 2 }, { "type": "HELLHOUND", "count": 1 }, { "type": "ABOMINATION", "count": 1 }] },
-	# Wave 6
-	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 2 }, { "type": "IMP", "count": 2 }] },
-	# Wave 7
-	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "IMP", "count": 3 }, { "type": "HELLHOUND", "count": 2 }] },
-	# Wave 8
-	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 2 }, { "type": "HELLHOUND", "count": 2 }] },
-	# Wave 9
-	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 3 }, { "type": "IMP", "count": 2 }, { "type": "HELLHOUND", "count": 1 }] },
-	# Wave 10
-	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT, "enemies": [{ "type": "DEMON", "count": 4 }, { "type": "HELLHOUND", "count": 2 }, { "type": "IMP", "count": 2 }] },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT },
+	{ "encounter": Encounter.BOSS, "wave_type": WaveType.BOSS, "boss_name": "DEMON OF VANITY", "boss_type": "VANITY_BOSS" },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT },
+	{ "encounter": Encounter.ENEMIES, "wave_type": WaveType.FIGHT },
 ]
 
 ## Act structure — add new dicts here for Act II, III, etc.
@@ -162,8 +168,13 @@ static func get_wave_info(wave: int) -> Dictionary:
 	return WAVES[wave - 1]
 
 ## Return the enemy definition array for a given wave number (1-based).
+## FIGHT waves generate random enemies from the difficulty budget.
+## BOSS waves return the single boss specified in the wave definition.
 static func get_wave_def(wave: int) -> Array:
-	return WAVES[wave - 1]["enemies"]
+	var wave_info: Dictionary = WAVES[wave - 1]
+	if wave_info["encounter"] == Encounter.BOSS:
+		return generate_boss_wave(wave_info.get("boss_type", "VANITY_BOSS"))
+	return generate_wave_enemies(wave)
 
 ## Return the encounter type for a given wave number (1-based).
 static func get_encounter(wave: int) -> int:
@@ -187,3 +198,56 @@ static func get_act_for_wave(wave: int) -> Dictionary:
 		if wave >= act["first_wave"] and wave <= act["last_wave"]:
 			return act
 	return ACTS[0]
+
+## Compute the real difficulty cost for a given enemy type.
+## At default scales (1.0) this equals base_difficulty.
+## Scales above 1.0 increase the cost proportionally.
+static func real_difficulty(type_name: String) -> float:
+	var stats: Dictionary = BASE[type_name]
+	var bd: float = stats["base_difficulty"]
+	var hs: float = stats.get("health_scale", 1.0)
+	var ds: float = stats.get("damage_scale", 1.0)
+	return bd * ((hs + ds) / 2.0)
+
+## Return the difficulty budget for a given wave number.
+static func get_difficulty_budget(wave: int) -> float:
+	return 100.0 + float(wave - 1) * 25.0
+
+## Build a randomized enemy list for a FIGHT wave within the difficulty budget.
+## Returns Array of { "type": String, "count": int }.
+static func generate_wave_enemies(wave: int) -> Array:
+	var budget: float = get_difficulty_budget(wave)
+	var allowed_rarities: Array[int] = [Rarity.COMMON, Rarity.UNCOMMON, Rarity.RARE]
+
+	var pool: Array[Dictionary] = []
+	for type_name: String in BASE:
+		var stats: Dictionary = BASE[type_name]
+		var rarity: int = stats.get("rarity", Rarity.COMMON)
+		if rarity not in allowed_rarities:
+			continue
+		var cost: float = real_difficulty(type_name)
+		pool.append({ "type": type_name, "cost": cost })
+
+	pool.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["cost"] < b["cost"])
+	var min_cost: float = pool[0]["cost"] if pool.size() > 0 else 999999.0
+
+	var counts: Dictionary = {}
+	while budget >= min_cost and pool.size() > 0:
+		var affordable: Array[Dictionary] = []
+		for entry: Dictionary in pool:
+			if entry["cost"] <= budget:
+				affordable.append(entry)
+		if affordable.is_empty():
+			break
+		var pick: Dictionary = affordable[randi() % affordable.size()]
+		counts[pick["type"]] = counts.get(pick["type"], 0) + 1
+		budget -= pick["cost"]
+
+	var result: Array = []
+	for type_name: String in counts:
+		result.append({ "type": type_name, "count": counts[type_name] })
+	return result
+
+## Build the enemy list for a BOSS wave.
+static func generate_boss_wave(boss_type_name: String) -> Array:
+	return [{ "type": boss_type_name, "count": 1 }]

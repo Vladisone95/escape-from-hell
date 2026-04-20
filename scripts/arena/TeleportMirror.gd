@@ -28,7 +28,6 @@ func init(player: CharacterBody2D, color: Color, linked_partner: Node2D, cd: flo
 	partner = linked_partner
 	cooldown = cd
 	add_to_group("interactable")
-	z_index = 1
 	modulate = Color(1, 1, 1, 0)
 	scale = Vector2(0.6, 0.6)
 	var tw := create_tween()
@@ -107,7 +106,7 @@ func interact() -> void:
 func _finish_teleport() -> void:
 	if not is_instance_valid(_player):
 		return
-	_player.global_position = partner.global_position + Vector2(0, 60)
+	_player.global_position = partner.global_position + Vector2(0, 30)
 
 	# Reparent camera back to player
 	if _camera != null and is_instance_valid(_camera) and is_instance_valid(_camera_parent):

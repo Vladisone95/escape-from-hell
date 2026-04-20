@@ -1,7 +1,5 @@
 extends Control
 
-var _melee_btn: Button
-var _ranged_btn: Button
 var _settings_overlay: Control
 var _volume_value_label: Label
 var _resolution_dropdown: OptionButton
@@ -67,37 +65,6 @@ func _build_ui() -> void:
 	sp.custom_minimum_size = Vector2(0, 20)
 	vbox.add_child(sp)
 
-	# Weapon type label
-	var wt_label := Label.new()
-	wt_label.text = "CHOOSE WEAPON"
-	wt_label.add_theme_font_size_override("font_size", 22)
-	wt_label.add_theme_color_override("font_color", Color(0.88, 0.55, 0.15))
-	wt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(wt_label)
-
-	# Weapon type buttons row
-	var wt_row := HBoxContainer.new()
-	wt_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	wt_row.add_theme_constant_override("separation", 16)
-	vbox.add_child(wt_row)
-
-	_melee_btn = Button.new()
-	_melee_btn.text = "MELEE"
-	_melee_btn.custom_minimum_size = Vector2(130, 50)
-	_melee_btn.add_theme_font_size_override("font_size", 22)
-	_melee_btn.pressed.connect(func(): _select_weapon(GameData.WeaponType.MELEE))
-	wt_row.add_child(_melee_btn)
-
-	_ranged_btn = Button.new()
-	_ranged_btn.text = "RANGED"
-	_ranged_btn.custom_minimum_size = Vector2(130, 50)
-	_ranged_btn.add_theme_font_size_override("font_size", 22)
-	_ranged_btn.pressed.connect(func(): _select_weapon(GameData.WeaponType.RANGED))
-	wt_row.add_child(_ranged_btn)
-
-	# Default to melee
-	_select_weapon(GameData.WeaponType.MELEE)
-
 	# Spacer
 	var sp2 := Control.new()
 	sp2.custom_minimum_size = Vector2(0, 10)
@@ -110,14 +77,6 @@ func _build_ui() -> void:
 	start_btn.add_theme_font_size_override("font_size", 28)
 	start_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/Arena.tscn"))
 	vbox.add_child(start_btn)
-
-	# Test scene button
-	var test_btn := Button.new()
-	test_btn.text = "TEST SCENE"
-	test_btn.custom_minimum_size = Vector2(280, 62)
-	test_btn.add_theme_font_size_override("font_size", 28)
-	test_btn.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/TestScene.tscn"))
-	vbox.add_child(test_btn)
 
 	# Settings button
 	var settings_btn := Button.new()
@@ -140,17 +99,6 @@ func _build_ui() -> void:
 	_settings_overlay.visible = false
 	add_child(_settings_overlay)
 
-
-func _select_weapon(weapon_type: int) -> void:
-	GameData.player_weapon_type = weapon_type
-	if weapon_type == GameData.WeaponType.MELEE:
-		GameData.player_attack_range = 150.0
-		_melee_btn.add_theme_color_override("font_color", Color(1.0, 0.75, 0.1))
-		_ranged_btn.remove_theme_color_override("font_color")
-	else:
-		GameData.player_attack_range = 400.0
-		_ranged_btn.add_theme_color_override("font_color", Color(0.3, 0.7, 1.0))
-		_melee_btn.remove_theme_color_override("font_color")
 
 func _build_settings_overlay() -> Control:
 	var overlay := ColorRect.new()

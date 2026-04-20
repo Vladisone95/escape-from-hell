@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://btlm3vi0btyb0"
-path="res://.godot/imported/player_staff.png-396b31f1e146d0731fdd9a4f1c60331f.ctex"
+uid="uid://pf7sg53rilsm"
+path="res://.godot/imported/img_24.png-863b8d2da723971147733534ebb9124a.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/sprites/player/player_staff.png"
-dest_files=["res://.godot/imported/player_staff.png-396b31f1e146d0731fdd9a4f1c60331f.ctex"]
+source_file="res://assets/animations/fire_ball_side_small/imgs/img_24.png"
+dest_files=["res://.godot/imported/img_24.png-863b8d2da723971147733534ebb9124a.ctex"]
 
 [params]
 

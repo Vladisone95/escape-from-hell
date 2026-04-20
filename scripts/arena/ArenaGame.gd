@@ -12,7 +12,7 @@ var _camera: Camera2D
 var _hud: Control
 var _hud_layer: CanvasLayer
 var _arena_container: Node2D  # holds walls, floor, obstacles
-var _enemy_container: Node2D
+var _entity_container: Node2D  # y-sorted: player, enemies, interactables
 var _alive_count: int = 0
 var _arena_size: Vector2 = ARENA_SIZE
 var _boss_enemy: CharacterBody2D = null  # tracked boss for HUD health bar
@@ -121,8 +121,9 @@ func _release_mirror_ring(idx: int) -> void:
 func _build_arena() -> void:
 	_arena_container = Node2D.new()
 	add_child(_arena_container)
-	_enemy_container = Node2D.new()
-	add_child(_enemy_container)
+	_entity_container = Node2D.new()
+	_entity_container.y_sort_enabled = true
+	add_child(_entity_container)
 	_generate_arena(GameData.current_wave)
 
 func _generate_arena(wave: int) -> void:
@@ -141,11 +142,25 @@ func _generate_arena(wave: int) -> void:
 	# Floor + lava tilemap
 	var floor_layer: TileMapLayer = TileMapLayer.new()
 	floor_layer.set_script(load("res://scripts/arena/ArenaFloorTileMap.gd"))
-	var TileSetBuilder: GDScript = load("res://scripts/arena/ArenaTileSet.gd")
-	floor_layer.tile_set = TileSetBuilder.create()
+	floor_layer.tile_set = load("res://assets/tilesets/main_tileset.tres")
 	floor_layer.position = _current_grid.get_origin()
 	_arena_container.add_child(floor_layer)
 	floor_layer.populate(_current_grid)
+
+	# Lava collision boundary
+	var lava_body: StaticBody2D = StaticBody2D.new()
+	lava_body.collision_layer = 1  # world
+	lava_body.collision_mask = 0
+	lava_body.position = _current_grid.get_origin()
+	_arena_container.add_child(lava_body)
+	var half: float = RoomGrid.CELL_SIZE * 0.5
+	for cell: Vector2i in _current_grid.get_lava_boundary_cells():
+		var shape: RectangleShape2D = RectangleShape2D.new()
+		shape.size = Vector2(RoomGrid.CELL_SIZE, RoomGrid.CELL_SIZE)
+		var col: CollisionShape2D = CollisionShape2D.new()
+		col.shape = shape
+		col.position = Vector2(cell.x * RoomGrid.CELL_SIZE + half, cell.y * RoomGrid.CELL_SIZE + half)
+		lava_body.add_child(col)
 
 	# Lava bubble animations
 	var bubble_node: Node2D = Node2D.new()
@@ -161,20 +176,42 @@ func _spawn_mirrors() -> void:
 	var is_boss_m: bool = EnemyStats.get_encounter(GameData.current_wave) == EnemyStats.Encounter.BOSS
 	if not is_boss_m:
 		return  # mirrors only appear on boss waves
-	var hw := _arena_size.x * 0.5
 	var mirror_a := Node2D.new()
 	mirror_a.set_script(load("res://scripts/arena/TeleportMirror.gd"))
-	mirror_a.position = Vector2(-hw * 0.55, _arena_size.y * 0.2)
+	mirror_a.position = _find_mirror_placement(-1)
 	var mirror_b := Node2D.new()
 	mirror_b.set_script(load("res://scripts/arena/TeleportMirror.gd"))
-	mirror_b.position = Vector2(hw * 0.55, _arena_size.y * 0.2)
+	mirror_b.position = _find_mirror_placement(1)
 	var pair_color := Color(0.9, 0.15, 0.1)  # red glow for boss mirrors
-	_arena_container.add_child(mirror_a)
-	_arena_container.add_child(mirror_b)
+	_entity_container.add_child(mirror_a)
+	_entity_container.add_child(mirror_b)
 	mirror_a.init(_player, pair_color, mirror_b, 15.0)
 	mirror_b.init(_player, pair_color, mirror_a, 15.0)
-	# Store references for boss mirror mechanic
 	_boss_mirrors = [mirror_a, mirror_b]
+
+func _find_mirror_placement(side: int) -> Vector2:
+	var center_x: int = _current_grid.width / 2
+	var center_y: int = _current_grid.height / 2
+	var floor_cells: Array[Vector2i] = _current_grid.get_floor_positions(true)
+	for _attempt: int in 30:
+		var cell: Vector2i = floor_cells[randi() % floor_cells.size()]
+		# Must be on correct side
+		if side < 0 and cell.x >= center_x:
+			continue
+		if side > 0 and cell.x <= center_x:
+			continue
+		# Must have 2-cell floor clearance
+		if not _current_grid.is_floor(cell.x - 2, cell.y) or not _current_grid.is_floor(cell.x + 2, cell.y):
+			continue
+		if not _current_grid.is_floor(cell.x, cell.y - 2) or not _current_grid.is_floor(cell.x, cell.y + 2):
+			continue
+		var pos: Vector2 = _current_grid.grid_to_world(cell.x, cell.y)
+		if pos.length() < 200.0:
+			continue
+		return pos
+	# Fallback
+	var hw: float = _arena_size.x * 0.5
+	return Vector2(float(side) * hw * 0.55, _arena_size.y * 0.2)
 
 func _spawn_shrines() -> void:
 	# Spawn shrine on wave 1 for testing
@@ -183,7 +220,7 @@ func _spawn_shrines() -> void:
 	var shrine := Node2D.new()
 	shrine.set_script(load("res://scripts/arena/SacrificialShrine.gd"))
 	shrine.position = Vector2(0, -500)
-	_arena_container.add_child(shrine)
+	_entity_container.add_child(shrine)
 	shrine.init(_player)
 	shrine.shrine_used.connect(_on_shrine_used)
 	_hud.log_msg("[center][color=red]A Sacrificial Shrine looms nearby...[/color][/center]")
@@ -195,12 +232,13 @@ func _spawn_player() -> void:
 	_player = CharacterBody2D.new()
 	_player.set_script(load("res://scripts/arena/PlayerBody.gd"))
 	_player.position = Vector2.ZERO
-	add_child(_player)
+	_entity_container.add_child(_player)
 	_player.health_changed.connect(_on_player_health_changed)
 	_player.died.connect(_on_player_died)
 
 func _setup_camera() -> void:
 	_camera = Camera2D.new()
+	_camera.zoom = Vector2(1.875, 1.875)
 	_camera.position_smoothing_enabled = true
 	_camera.position_smoothing_speed = 8.0
 	_player.add_child(_camera)
@@ -324,6 +362,7 @@ func _on_inventory_next_stage() -> void:
 	_inventory_overlay.visible = false
 	if _advance_wave_on_next:
 		GameData.current_wave += 1
+	_player._attack_grace = 0.15
 	_start_combat()
 
 func _start_combat() -> void:
@@ -340,15 +379,16 @@ func _start_combat() -> void:
 	_mirror_charging_idx = -1
 	_mirror_charge_progress = 0.0
 
+	# Clear old entities (enemies, projectiles, effects) — keep player
+	for c in _entity_container.get_children():
+		if c != _player:
+			c.queue_free()
+
 	# Regenerate arena
 	_generate_arena(GameData.current_wave)
 	_spawn_mirrors()
 	_spawn_shrines()
 	_update_camera_limits()
-
-	# Clear old enemies
-	for c in _enemy_container.get_children():
-		c.queue_free()
 
 	# Reset player — offset for boss waves so player doesn't spawn inside boss
 	var boss_wave: bool = EnemyStats.get_encounter(GameData.current_wave) == EnemyStats.Encounter.BOSS
@@ -384,9 +424,20 @@ func _spawn_wave_enemies() -> void:
 	_boss_enemy = null
 	var wave_def: Array = EnemyStats.get_wave_def(GameData.current_wave)
 	var is_boss_encounter: bool = EnemyStats.get_encounter(GameData.current_wave) == EnemyStats.Encounter.BOSS
-	var edge_floors: Array[Vector2i] = []
+	# Get spawn positions with floor clearance to avoid stuck enemies
+	var spawn_floors: Array[Vector2i] = []
 	if _current_grid != null:
-		edge_floors = _current_grid.get_edge_floor_positions(3, true)
+		var edge_floors: Array[Vector2i] = _current_grid.get_edge_floor_positions(3, true)
+		for cell: Vector2i in edge_floors:
+			if _current_grid.is_floor(cell.x - 2, cell.y) and _current_grid.is_floor(cell.x + 2, cell.y) \
+				and _current_grid.is_floor(cell.x, cell.y - 2) and _current_grid.is_floor(cell.x, cell.y + 2):
+				spawn_floors.append(cell)
+		# Fallback: all floor cells with clearance
+		if spawn_floors.is_empty():
+			for cell: Vector2i in _current_grid.get_floor_positions(true):
+				if _current_grid.is_floor(cell.x - 2, cell.y) and _current_grid.is_floor(cell.x + 2, cell.y) \
+					and _current_grid.is_floor(cell.x, cell.y - 2) and _current_grid.is_floor(cell.x, cell.y + 2):
+					spawn_floors.append(cell)
 	var hw: float = _arena_size.x * 0.5 - 200
 	var hh: float = _arena_size.y * 0.5 - 200
 
@@ -402,8 +453,8 @@ func _spawn_wave_enemies() -> void:
 			var pos: Vector2 = Vector2.ZERO
 			if is_boss:
 				pos = Vector2.ZERO
-			elif edge_floors.size() > 0:
-				var cell: Vector2i = edge_floors[randi() % edge_floors.size()]
+			elif spawn_floors.size() > 0:
+				var cell: Vector2i = spawn_floors[randi() % spawn_floors.size()]
 				pos = _current_grid.grid_to_world(cell.x, cell.y)
 			else:
 				var edge: int = randi() % 4
@@ -416,7 +467,7 @@ func _spawn_wave_enemies() -> void:
 			enemy.position = pos
 			enemy.init(et, _player)
 			enemy.set_nav(_nav_astar, _current_grid)
-			_enemy_container.add_child(enemy)
+			_entity_container.add_child(enemy)
 			enemy.add_to_group("enemies")
 			enemy.enemy_died.connect(_on_enemy_died)
 			_alive_count += 1
@@ -474,7 +525,7 @@ func _spawn_chest_pickup() -> void:
 	_chest_pickup = Node2D.new()
 	_chest_pickup.set_script(load("res://scripts/arena/ChestPickup.gd"))
 	_chest_pickup.position = Vector2.ZERO
-	add_child(_chest_pickup)
+	_entity_container.add_child(_chest_pickup)
 	_chest_pickup.init(_player)
 	_chest_pickup.chest_opened.connect(_on_chest_pickup_opened)
 	_hud.log_msg("[center][color=orange]A chest has appeared![/color][/center]")
@@ -492,7 +543,7 @@ func _spawn_wave_portal() -> void:
 	var WavePortalScript: GDScript = load("res://scripts/arena/WavePortal.gd")
 	_wave_portal = Area2D.new()
 	_wave_portal.set_script(WavePortalScript)
-	_arena_container.add_child(_wave_portal)
+	_entity_container.add_child(_wave_portal)
 	_wave_portal.global_position = _find_portal_placement()
 	_wave_portal.init(_player)
 	_wave_portal.portal_entered.connect(_on_portal_entered)

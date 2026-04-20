@@ -1,13 +1,15 @@
 extends Node2D
 
-const OCCUPANCY: float = 0.10  # fraction of eligible lava tiles that get a bubble
-const MIN_SHORE_DISTANCE: int = 3  # minimum tile distance from any floor tile
+const OCCUPANCY: float = 0.20  # fraction of lava tiles that get a bubble
+const MIN_POOL_BUBBLES: int = 2  # minimum bubbles per interior lava pool
 const FRAME_SIZE: int = 32
 const COLS: int = 4  # frames per row in the spritesheet
 const FRAME_COUNT: int = 9
 const ANIM_FPS: float = 4.0
 
 var _grid: RoomGrid
+var _frames1: SpriteFrames
+var _frames2: SpriteFrames
 
 func init(grid: RoomGrid, seed_val: int) -> void:
 	_grid = grid
@@ -23,39 +25,59 @@ func init(grid: RoomGrid, seed_val: int) -> void:
 	if tex1 == null and tex2 == null:
 		return
 
-	var frames1: SpriteFrames = _build_frames("bubble", tex1) if tex1 != null else null
-	var frames2: SpriteFrames = _build_frames("bubble", tex2) if tex2 != null else null
+	_frames1 = _build_frames("bubble", tex1) if tex1 != null else null
+	_frames2 = _build_frames("bubble", tex2) if tex2 != null else null
 
-	var deep_lava: Array[Vector2i] = _get_deep_lava_cells()
-	if deep_lava.is_empty():
+	var lava_cells: Array[Vector2i] = _get_lava_cells()
+	if lava_cells.is_empty():
 		return
 
-	var bubble_count: int = 0
-	for i: int in deep_lava.size():
+	var bubbled: Dictionary = {}  # Vector2i -> true
+	for i: int in lava_cells.size():
 		if rng.randf() >= OCCUPANCY:
 			continue
-		var cell: Vector2i = deep_lava[i]
-		var world_pos: Vector2 = _grid.grid_to_world(cell.x, cell.y)
+		var cell: Vector2i = lava_cells[i]
+		_spawn_bubble(cell, rng)
+		bubbled[cell] = true
 
-		var frames: SpriteFrames = frames1 if rng.randf() < 0.5 else frames2
-		if frames == null:
-			frames = frames1 if frames1 != null else frames2
+	# Ensure interior lava pools have at least MIN_POOL_BUBBLES
+	var interior_pools: Array = _find_interior_pools()
+	for pool: Array in interior_pools:
+		var count: int = 0
+		for cell: Vector2i in pool:
+			if bubbled.has(cell):
+				count += 1
+		if count >= MIN_POOL_BUBBLES:
+			continue
+		var available: Array[Vector2i] = []
+		for cell: Vector2i in pool:
+			if not bubbled.has(cell):
+				available.append(cell)
+		while count < MIN_POOL_BUBBLES and not available.is_empty():
+			var idx: int = rng.randi_range(0, available.size() - 1)
+			var cell: Vector2i = available[idx]
+			available.remove_at(idx)
+			_spawn_bubble(cell, rng)
+			bubbled[cell] = true
+			count += 1
 
-		var anim: AnimatedSprite2D = AnimatedSprite2D.new()
-		anim.sprite_frames = frames
-		anim.position = world_pos
-		var s: float = rng.randf_range(0.75, 1.5)
-		anim.scale = Vector2(s, s)
-		anim.z_index = 1
-		anim.visible = false
-		add_child(anim)
 
-		# Stagger start for natural boiling effect
-		var delay: float = rng.randf_range(0.0, 3.0)
-		var start_frame: int = rng.randi_range(0, FRAME_COUNT - 1)
-		get_tree().create_timer(delay).timeout.connect(_start_anim.bind(anim, start_frame))
-		bubble_count += 1
-
+func _spawn_bubble(cell: Vector2i, rng: RandomNumberGenerator) -> void:
+	var world_pos: Vector2 = _grid.grid_to_world(cell.x, cell.y)
+	var frames: SpriteFrames = _frames1 if rng.randf() < 0.5 else _frames2
+	if frames == null:
+		frames = _frames1 if _frames1 != null else _frames2
+	var anim: AnimatedSprite2D = AnimatedSprite2D.new()
+	anim.sprite_frames = frames
+	anim.position = world_pos
+	var s: float = rng.randf_range(0.75, 1.5)
+	anim.scale = Vector2(s, s)
+	anim.z_index = 1
+	anim.visible = false
+	add_child(anim)
+	var delay: float = rng.randf_range(0.0, 3.0)
+	var start_frame: int = rng.randi_range(0, FRAME_COUNT - 1)
+	get_tree().create_timer(delay).timeout.connect(_start_anim.bind(anim, start_frame))
 
 func _start_anim(sprite: AnimatedSprite2D, frame: int) -> void:
 	if is_instance_valid(sprite):
@@ -77,19 +99,65 @@ func _build_frames(anim_name: String, sheet: Texture2D) -> SpriteFrames:
 		sf.add_frame(anim_name, atlas)
 	return sf
 
-func _get_deep_lava_cells() -> Array[Vector2i]:
+func _get_lava_cells() -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
 	for gy: int in _grid.height:
 		for gx: int in _grid.width:
-			if _grid.is_floor(gx, gy):
-				continue
-			if _is_deep_lava(gx, gy):
+			if not _grid.is_floor(gx, gy):
 				result.append(Vector2i(gx, gy))
 	return result
 
-func _is_deep_lava(gx: int, gy: int) -> bool:
-	for dy: int in range(-MIN_SHORE_DISTANCE, MIN_SHORE_DISTANCE + 1):
-		for dx: int in range(-MIN_SHORE_DISTANCE, MIN_SHORE_DISTANCE + 1):
-			if _grid.is_floor(gx + dx, gy + dy):
-				return false
-	return true
+func _find_interior_pools() -> Array:
+	var w: int = _grid.width
+	var h: int = _grid.height
+	# Flood-fill from edges to mark exterior lava
+	var exterior: Dictionary = {}
+	var queue: Array[Vector2i] = []
+	for gx: int in w:
+		for gy: int in [0, h - 1]:
+			if not _grid.is_floor(gx, gy) and not exterior.has(Vector2i(gx, gy)):
+				exterior[Vector2i(gx, gy)] = true
+				queue.append(Vector2i(gx, gy))
+	for gy: int in h:
+		for gx: int in [0, w - 1]:
+			if not _grid.is_floor(gx, gy) and not exterior.has(Vector2i(gx, gy)):
+				exterior[Vector2i(gx, gy)] = true
+				queue.append(Vector2i(gx, gy))
+	while not queue.is_empty():
+		var cell: Vector2i = queue.pop_back()
+		for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = cell + dir
+			if n.x < 0 or n.x >= w or n.y < 0 or n.y >= h:
+				continue
+			if _grid.is_floor(n.x, n.y) or exterior.has(n):
+				continue
+			exterior[n] = true
+			queue.append(n)
+
+	# Collect interior lava cells
+	var interior: Dictionary = {}
+	for gy: int in h:
+		for gx: int in w:
+			var c: Vector2i = Vector2i(gx, gy)
+			if not _grid.is_floor(gx, gy) and not exterior.has(c):
+				interior[c] = true
+
+	# Group into connected components
+	var visited: Dictionary = {}
+	var pools: Array = []
+	for cell: Vector2i in interior:
+		if visited.has(cell):
+			continue
+		var pool: Array[Vector2i] = []
+		var bfs: Array[Vector2i] = [cell]
+		visited[cell] = true
+		while not bfs.is_empty():
+			var cur: Vector2i = bfs.pop_back()
+			pool.append(cur)
+			for dir: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var n: Vector2i = cur + dir
+				if interior.has(n) and not visited.has(n):
+					visited[n] = true
+					bfs.append(n)
+		pools.append(pool)
+	return pools

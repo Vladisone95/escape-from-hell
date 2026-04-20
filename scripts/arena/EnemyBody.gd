@@ -84,11 +84,11 @@ func _ready() -> void:
 	var col := CollisionShape2D.new()
 	var shape := CircleShape2D.new()
 	if etype == 5:       # VANITY_BOSS — large collision so player bumps into body
-		shape.radius = 200.0
+		shape.radius = 96.0
 	elif etype == 4:     # ABOMINATION
-		shape.radius = 44.0
+		shape.radius = 19.0
 	else:
-		shape.radius = 24.0
+		shape.radius = 10.0
 	col.shape = shape
 	add_child(col)
 	collision_layer = 1 << 2  # layer 3: enemy_body
@@ -101,12 +101,12 @@ func _ready() -> void:
 	sprite = Node2D.new()
 	if etype == 5:  # VANITY_BOSS uses its own sprite
 		sprite.set_script(load("res://scripts/arena/VanityBossSprite.gd"))
-		sprite.scale = Vector2(3.75, 3.75)
+		sprite.scale = Vector2(1.8, 1.8)
 	else:
 		sprite.set_script(load("res://scripts/arena/EnemyArenaSprite.gd"))
 		sprite.etype = etype
-		sprite.scale = Vector2(2, 2)
-		sprite.position.y = -16.0  # offset sprite up so collision sits at feet
+		sprite.scale = Vector2(0.85, 0.85)
+		sprite.position.y = -7.0  # offset sprite up so collision sits at feet
 	add_child(sprite)
 	sprite.start_idle()
 
@@ -114,17 +114,17 @@ func _ready() -> void:
 	hurtbox = Area2D.new()
 	hurtbox.set_script(load("res://scripts/arena/Hurtbox.gd"))
 	if etype != 5:
-		hurtbox.position.y = -16.0  # match sprite offset for non-boss
+		hurtbox.position.y = -7.0  # match sprite offset for non-boss
 	hurtbox.collision_layer = 1 << 2  # layer 3: enemy_body (for player hitbox detection)
 	hurtbox.collision_mask = 1 << 3   # layer 4: player_attack
 	var hb_shape := CollisionShape2D.new()
 	var hb_circle := CircleShape2D.new()
-	if etype == 5:       # VANITY_BOSS — covers entire sprite including arms (BODY_R + arm len) * scale
-		hb_circle.radius = 420.0
+	if etype == 5:       # VANITY_BOSS — covers entire sprite including arms
+		hb_circle.radius = 200.0
 	elif etype == 4:     # ABOMINATION
-		hb_circle.radius = 60.0
+		hb_circle.radius = 26.0
 	else:
-		hb_circle.radius = 32.0
+		hb_circle.radius = 14.0
 	hb_shape.shape = hb_circle
 	hurtbox.add_child(hb_shape)
 	add_child(hurtbox)
@@ -133,9 +133,16 @@ func _ready() -> void:
 	# Health bar
 	health_bar_node = Node2D.new()
 	health_bar_node.set_script(load("res://scripts/arena/HealthBar.gd"))
-	var hbar_extra: float = 16.0 if etype != 5 else 0.0  # account for sprite offset
-	health_bar_node.y_offset = -(240.0 if etype == 5 else hb_circle.radius + 12.0 + hbar_extra)
+	var hbar_extra: float = 7.0 if etype != 5 else 0.0  # account for sprite offset
+	health_bar_node.y_offset = -(115.0 if etype == 5 else hb_circle.radius + 6.0 + hbar_extra)
 	add_child(health_bar_node)
+
+	# Range circle
+	#var _range_circle: Node2D = Node2D.new()
+	#_range_circle.set_script(load("res://scripts/arena/EnemyRangeCircle.gd"))
+	#_range_circle.range_radius = attack_range
+	#_range_circle.position.y = -7.0 if etype != 5 else 0.0
+	#add_child(_range_circle)
 
 	if etype == 5:
 		_capture_fixed_position.call_deferred()
@@ -151,7 +158,7 @@ func _physics_process(delta: float) -> void:
 	if not is_instance_valid(player_ref):
 		return
 
-	_knockback_vel = _knockback_vel.move_toward(Vector2.ZERO, 1000.0 * delta)
+	_knockback_vel = _knockback_vel.move_toward(Vector2.ZERO, 430.0 * delta)
 
 	# Boss is pinned — restore position after any physics interaction
 	if etype == 5:
@@ -218,7 +225,7 @@ func _process_chase(delta: float) -> void:
 
 	# Separation from other enemies
 	var sep: Vector2 = _get_separation()
-	dir = (dir + sep * 0.5).normalized()
+	dir = (dir + sep * 1.2).normalized()
 
 	velocity = dir * spd + _knockback_vel
 	_face_player()
@@ -279,7 +286,7 @@ func _process_attack(_delta: float) -> void:
 		elif etype == 4:  # ABOMINATION — 12 projectiles from outer edge
 			sprite.play_cast()
 			var Proj := load("res://scripts/arena/Projectile.gd")
-			var edge_radius := 66.0  # spawn from outer edge of the body
+			var edge_radius := 30.0  # spawn from outer edge of the body
 			for i in range(12):
 				var angle := (TAU / 12.0) * i
 				var dir := Vector2(cos(angle), sin(angle))
@@ -293,17 +300,28 @@ func _process_attack(_delta: float) -> void:
 			_spawn_channel_orb()
 			return  # Don't transition to cooldown yet
 		else:
-			# Deal damage to player if in the telegraphed arc
+			# Melee strike fires — always animate + lunge regardless of hit
+			sprite.play_attack(0.3)
+			SoundManager.play("attack")
+			var lunge_tw := create_tween()
+			lunge_tw.tween_property(self, "position", position + _attack_dir * 8, 0.08)
+			lunge_tw.tween_property(self, "position", position, 0.12).set_trans(Tween.TRANS_ELASTIC)
+			# Deal damage to player if inside the telegraphed area
 			var to_player := player_ref.global_position - global_position
-			var dist := to_player.length()
-			var hit_reach := attack_range * 1.5
-			var in_range := dist < hit_reach
-			var angle_diff := absf(_attack_dir.angle_to(to_player.normalized()))
-			var in_arc := angle_diff < deg_to_rad(45.0)
-			if in_range and in_arc:
+			var hit: bool = false
+			if etype == 1:  # IMP — rectangle
+				var fwd_dist := to_player.dot(_attack_dir)
+				var lat_dist := absf(to_player.dot(_attack_dir.orthogonal()))
+				hit = fwd_dist > 0.0 and fwd_dist < attack_range * 2.0 and lat_dist < 14.0
+			else:  # DEMON, HELLHOUND — cone
+				var dist := to_player.length()
+				var hit_reach := attack_range * 1.5
+				var angle_diff := absf(_attack_dir.angle_to(to_player.normalized()))
+				hit = dist < hit_reach and angle_diff < deg_to_rad(45.0)
+			if hit:
 				var dir := to_player.normalized()
 				if player_ref.hurtbox:
-					player_ref.hurtbox.receive_hit(attack_damage, dir * 240.0)
+					player_ref.hurtbox.receive_hit(attack_damage, dir * 110.0)
 
 				# Spikes reflection
 				if GameData.player_spikes > 0:
@@ -332,16 +350,12 @@ func _change_state(new_state: int) -> void:
 		State.ATTACK:
 			sprite._stop_walk()
 			sprite.start_idle()
-			_state_timer = 1.2 if etype == 5 else 0.3  # boss gets longer wind-up
+			_state_timer = 1.2 if etype == 5 else (0.5 if etype <= 2 else 0.3)
 			if etype == 5:
 				sprite.play_attack_wind_up()
 			if etype != 3 and etype != 4 and etype != 5:  # Non-ranged: melee telegraph
 				_attack_dir = (player_ref.global_position - global_position).normalized()
 				_spawn_melee_telegraph()
-				var dir := _attack_dir
-				var tw := create_tween()
-				tw.tween_property(self, "position", position + dir * 8, 0.1)
-				tw.tween_property(self, "position", position, 0.15).set_trans(Tween.TRANS_ELASTIC)
 		State.COOLDOWN:
 			_cooldown_timer = attack_cooldown
 			sprite.start_idle()
@@ -406,8 +420,12 @@ func _get_separation() -> Vector2:
 			continue
 		var diff: Vector2 = global_position - body.global_position
 		var dist := diff.length()
-		if dist < 60.0 and dist > 0.01:
-			sep += diff.normalized() * (80.0 - dist) / 80.0
+		if dist <= 0.01:
+			# Exact overlap — push in random direction
+			var angle: float = randf() * TAU
+			sep += Vector2(cos(angle), sin(angle))
+		elif dist < 48.0:
+			sep += diff.normalized() * (48.0 - dist) / 48.0
 	return sep
 
 ## Returns the movement direction using pathfinding when available.
@@ -463,58 +481,78 @@ func _clear_telegraph() -> void:
 
 func _spawn_melee_telegraph() -> void:
 	_clear_telegraph()
-	var hit_reach := attack_range * 1.5
 	var dir := _attack_dir
 	var angle_base := dir.angle()
-	var arc_spread := deg_to_rad(45.0)
 
 	_telegraph_node = Node2D.new()
-	_telegraph_node.z_index = -1
+	_telegraph_node.z_as_relative = false
+	_telegraph_node.z_index = 1
 	get_parent().add_child(_telegraph_node)
 	_telegraph_node.global_position = global_position
+	_telegraph_node.set_meta("tel_color", Color(1.0, 0.4, 0.1, 0.0))
 
-	# Capture for draw closure
-	var _t_angle := angle_base
-	var _t_spread := arc_spread
-	var _t_reach := hit_reach
-	var _t_color := Color(1.0, 0.15, 0.05, 0.0)
 	var tnode := _telegraph_node
 
-	tnode.draw.connect(func():
-		# Draw filled arc fan
-		var pts := PackedVector2Array()
-		pts.append(Vector2.ZERO)
-		for i in 13:
-			var t := float(i) / 12.0
-			var a := _t_angle - _t_spread + t * _t_spread * 2.0
-			pts.append(Vector2(cos(a), sin(a)) * _t_reach)
-		tnode.draw_polygon(pts, PackedColorArray([_t_color]))
-		# Edge outline
-		for i in 12:
-			var t0 := float(i) / 12.0
-			var t1 := float(i + 1) / 12.0
-			var a0 := _t_angle - _t_spread + t0 * _t_spread * 2.0
-			var a1 := _t_angle - _t_spread + t1 * _t_spread * 2.0
-			tnode.draw_line(
-				Vector2(cos(a0), sin(a0)) * _t_reach,
-				Vector2(cos(a1), sin(a1)) * _t_reach,
-				Color(1.0, 0.3, 0.1, _t_color.a * 2.0), 1.5)
-		tnode.draw_line(Vector2.ZERO, Vector2(cos(_t_angle - _t_spread), sin(_t_angle - _t_spread)) * _t_reach, Color(1.0, 0.3, 0.1, _t_color.a * 2.0), 1.5)
-		tnode.draw_line(Vector2.ZERO, Vector2(cos(_t_angle + _t_spread), sin(_t_angle + _t_spread)) * _t_reach, Color(1.0, 0.3, 0.1, _t_color.a * 2.0), 1.5)
-	)
+	if etype == 1:  # IMP — rectangle stab
+		var t_length := attack_range * 2.0
+		var t_half_w := 14.0
+		var t_angle := angle_base
+		tnode.draw.connect(func():
+			var col: Color = tnode.get_meta("tel_color")
+			var fwd := Vector2(cos(t_angle), sin(t_angle))
+			var perp := fwd.orthogonal()
+			var pts := PackedVector2Array([
+				perp * t_half_w,
+				fwd * t_length + perp * t_half_w,
+				fwd * t_length - perp * t_half_w,
+				-perp * t_half_w,
+			])
+			tnode.draw_polygon(pts, PackedColorArray([col]))
+			var edge_col := Color(col.r, 0.2, 0.05, minf(col.a * 1.5, 1.0))
+			tnode.draw_polyline(PackedVector2Array([
+				pts[0], pts[1], pts[2], pts[3], pts[0]
+			]), edge_col, 1.5)
+		)
+	else:  # DEMON, HELLHOUND — cone
+		var t_reach := attack_range * 1.5
+		var t_spread := deg_to_rad(45.0)
+		var t_angle := angle_base
+		tnode.draw.connect(func():
+			var col: Color = tnode.get_meta("tel_color")
+			var pts := PackedVector2Array()
+			pts.append(Vector2.ZERO)
+			for i in 13:
+				var t := float(i) / 12.0
+				var a := t_angle - t_spread + t * t_spread * 2.0
+				pts.append(Vector2(cos(a), sin(a)) * t_reach)
+			tnode.draw_polygon(pts, PackedColorArray([col]))
+			var edge_col := Color(col.r, 0.2, 0.05, minf(col.a * 1.5, 1.0))
+			for i in 12:
+				var t0 := float(i) / 12.0
+				var t1 := float(i + 1) / 12.0
+				var a0 := t_angle - t_spread + t0 * t_spread * 2.0
+				var a1 := t_angle - t_spread + t1 * t_spread * 2.0
+				tnode.draw_line(
+					Vector2(cos(a0), sin(a0)) * t_reach,
+					Vector2(cos(a1), sin(a1)) * t_reach,
+					edge_col, 1.5)
+			tnode.draw_line(Vector2.ZERO, Vector2(cos(t_angle - t_spread), sin(t_angle - t_spread)) * t_reach, edge_col, 1.5)
+			tnode.draw_line(Vector2.ZERO, Vector2(cos(t_angle + t_spread), sin(t_angle + t_spread)) * t_reach, edge_col, 1.5)
+		)
 
-	# Animate: fade in over the wind-up period, then flash on hit
+	# Two-phase animation: warning (faint orange) → danger (pronounced red)
 	var tw := create_tween()
 	tw.tween_method(func(alpha: float):
-		_t_color.a = alpha
 		if is_instance_valid(tnode):
+			tnode.set_meta("tel_color", Color(1.0, 0.4, 0.1, alpha))
 			tnode.queue_redraw()
-	, 0.0, 0.3, 0.2)  # fade in over 0.2s
+	, 0.0, 0.3, 0.1)
+	tw.tween_interval(0.2)
 	tw.tween_method(func(alpha: float):
-		_t_color.a = alpha
 		if is_instance_valid(tnode):
+			tnode.set_meta("tel_color", Color(1.0, 0.08, 0.03, alpha))
 			tnode.queue_redraw()
-	, 0.3, 0.5, 0.1)  # brighten at hit moment
+	, 0.3, 0.7, 0.12)
 
 func _clear_channel() -> void:
 	if is_instance_valid(_channel_node):
